@@ -8,6 +8,10 @@ from bot_api_v1.app.api.main import router as api_router
 from bot_api_v1.app.api.routers.health import router as health_router
 # from bot_api_v1.app.tasks import init_tasks  # 假设你会在tasks目录中创建这个函数
 
+# 在app.py中添加的优雅关闭函数
+from bot_api_v1.app.middlewares.logging_middleware import wait_for_log_tasks
+
+
 def create_app():
     app = FastAPI(
         title="High Performance API",
@@ -28,6 +32,15 @@ def create_app():
     
     # 初始化异步任务
     # init_tasks()
+
+
+    # 添加优雅关闭钩子
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        logger.info("Application shutdown, waiting for pending log tasks...")
+        await wait_for_log_tasks()
+        logger.info("All log tasks completed, application shutdown completed")
+    
     
     # 修正启动日志
     logger.info("Application startup completed", extra={
@@ -36,3 +49,4 @@ def create_app():
     })
     
     return app
+
