@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Query
-from bot_api_v1.app.core.schemas import PaginatedResponse
+from app.core.schemas import PaginatedResponse
 from bot_api_v1.app.core.dependencies import pagination_params
 
 router = APIRouter(tags=["User Management"])

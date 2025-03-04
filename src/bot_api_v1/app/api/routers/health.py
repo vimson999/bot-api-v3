@@ -25,15 +25,15 @@ async def health_check(db: Session = Depends(get_db)):
     - 关键服务心跳
     """
     try:
-        # 验证数据库连接
-        db.execute("SELECT 1")
+        # 临时注释掉数据库检查，避免异常
+        # db.execute("SELECT 1")
         
         # TODO 添加缓存检查和其他依赖检查
         
         return BaseResponse(data={
             "status": "running",
             "dependencies": {
-                "database": "healthy",
+                "database": "pending",  # 临时状态，表示数据库未集成
                 "cache": "healthy"
             }
         })
