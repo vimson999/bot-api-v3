@@ -3,6 +3,9 @@ from bot_api_v1.app.core.schemas import BaseResponse
 from bot_api_v1.app.core.dependencies import get_db
 from sqlalchemy.orm import Session
 from bot_api_v1.app.core.logger import logger
+from bot_api_v1.app.core.decorators import TollgateConfig
+
+
 
 router = APIRouter(tags=["System Monitoring"])
 
@@ -17,6 +20,13 @@ router = APIRouter(tags=["System Monitoring"])
                    "timestamp": "2024-05-28T10:30:45.123Z"
                }}}}
            })
+@TollgateConfig(
+    title="系统健康检查", 
+    type="health",
+    base_tollgate="10",
+    current_tollgate="1",
+    plat="system"
+)
 async def health_check(db: Session = Depends(get_db)):
     """
     系统健康检查端点，验证以下内容：

@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     # 数据库配置 - PostgreSQL
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", 
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/api_logs"
+        "postgresql+asyncpg://cappa_rw:RWcappaDb!!!2025@101.35.56.140:5432/cappadocia_v1"
     )
     DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() == "true"
     DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))

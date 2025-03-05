@@ -1,16 +1,17 @@
-# logging_middleware.py
+# bot_api_v1/app/middlewares/logging_middleware.py
+
 import time
 import uuid
 import json
+import io
 from fastapi import Request
 from starlette.responses import Response
-from starlette.concurrency import run_in_threadpool
+from starlette.routing import Match
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.services.log_service import LogService
 import asyncio
 from asyncio import create_task
-import io
-from typing import Dict, List, Any, Optional
+from bot_api_v1.app.core.decorators import get_tollgate_config
 
 # 创建一个全局的任务跟踪器
 _TASK_REGISTRY = set()
@@ -35,9 +36,48 @@ async def log_middleware(request: Request, call_next):
     method_name = f"{request.method}:{request.url.path}"
     
     # 提取用户信息
-    user_id = headers_dict.get('x-user-id')
     app_id = headers_dict.get('x-app-id')
-    uni_id = headers_dict.get('x-uni-id')
+    source_info = headers_dict.get('x-source')  # 默认为api
+    user_uuid = headers_dict.get('x-user-uuid')
+    user_nickName = headers_dict.get('x-user-nickname')
+    
+    # 尝试识别路由处理函数并获取tollgate配置
+    route_handler = None
+    tollgate_config = {}
+    
+    try:
+        for route in request.app.routes:
+            match, scope = route.matches({"type": "http", "path": request.url.path, "method": request.method})
+            if match != Match.NONE:
+                route_handler = route.endpoint
+                break
+        
+        if route_handler:
+            # 获取tollgate配置
+            tollgate_config = get_tollgate_config(route_handler)
+    except Exception as e:
+        logger.warning(f"Unable to extract route handler: {str(e)}")
+    
+    # 根据TollgateConfig配置更新日志参数
+    if tollgate_config:
+        if 'plat' in tollgate_config and tollgate_config['plat'] and not source_info:
+            source_info = tollgate_config['plat']
+        
+        # 构造tollgate标识
+        if 'base_tollgate' in tollgate_config and 'current_tollgate' in tollgate_config:
+            log_tollgate = f"{tollgate_config['base_tollgate']}-{tollgate_config['current_tollgate']}"
+        else:
+            log_tollgate = "10-1"
+        
+        # 构造备注信息
+        if 'title' in tollgate_config and tollgate_config['title']:
+            title_prefix = f"[{tollgate_config['title']}] "
+            log_memo = title_prefix + "Request"
+        else:
+            log_memo = "Request"
+    else:
+        log_tollgate = "10-1"
+        log_memo = "Request"
     
     # 存储原始请求体
     request_body = None
@@ -80,17 +120,18 @@ async def log_middleware(request: Request, call_next):
             LogService.save_log(
                 trace_key=trace_key,
                 method_name=method_name,
-                source="api",
+                source=source_info,
                 app_id=app_id,
-                user_id=user_id,
-                uni_id=uni_id,
+                user_uuid=user_uuid,
+                user_nickname=user_nickName,
                 entity_id=request.query_params.get("entity_id"),
-                type="request",
-                tollgate="1-1",
+                type=tollgate_config.get("type", "request"),  # 使用装饰器中的type，默认为request
+                tollgate=log_tollgate,
                 level="info",
                 para=query_params,
                 header=sanitized_headers,
                 body=request_body,
+                memo=log_memo,
                 ip_address=client_ip
             )
         )
@@ -171,6 +212,18 @@ async def log_middleware(request: Request, call_next):
             }
         )
         
+        # 更新响应tollgate和备注
+        if tollgate_config:
+            base_gate = tollgate_config.get("base_tollgate", "1")
+            current_gate = base_gate  # 响应阶段+1
+            response_tollgate = f'{base_gate}-{base_gate}'
+            
+            title = tollgate_config.get("title", "")
+            response_memo = f"[{title}] Duration: {process_time:.2f}ms, Status: {response.status_code}" if title else f"Duration: {process_time:.2f}ms, Status: {response.status_code}"
+        else:
+            response_tollgate = "10-10"
+            response_memo = f"Duration: {process_time:.2f}ms, Status: {response.status_code}"
+        
         # 异步记录响应日志到数据库
         try:
             # 为大响应体创建摘要
@@ -182,18 +235,18 @@ async def log_middleware(request: Request, call_next):
                 LogService.save_log(
                     trace_key=trace_key,
                     method_name=method_name,
-                    source="api",
+                    source=source_info,
                     app_id=app_id,
-                    user_id=user_id,
-                    uni_id=uni_id,
+                    user_uuid=user_uuid,
+                    user_nickname=user_nickName,
                     entity_id=request.query_params.get("entity_id"),
-                    type="response",
-                    tollgate="1-2",
+                    type=tollgate_config.get("type", "response"),  # 使用装饰器中的type，默认为response
+                    tollgate=response_tollgate,
                     level="info",
                     para=None,
                     header=sanitized_response_headers,
                     body=response_body,
-                    memo=f"Duration: {process_time:.2f}ms, Status: {response.status_code}",
+                    memo=response_memo,
                     ip_address=client_ip
                 )
             )
@@ -226,24 +279,37 @@ async def log_middleware(request: Request, call_next):
             }
         )
         
+        # 更新错误tollgate和备注
+        if tollgate_config:
+            base_gate = tollgate_config.get("base_tollgate", "1")
+            # current_gate = str(int(tollgate_config.get("current_tollgate", "1")) + 2)  # 错误阶段+2
+            error_tollgate = f'{base_gate}-9'
+            
+            title = tollgate_config.get("title", "")
+            error_memo = f"[{title}] Error: {error_message}, Duration: {process_time:.2f}ms" if title else f"Error: {error_message}, Duration: {process_time:.2f}ms"
+        else:
+            # error_tollgate = "1-3"
+            error_tollgate = f'{base_gate}-9'
+            error_memo = f"Duration: {process_time:.2f}ms, Exception occurred: {error_message}"
+        
         # 记录错误日志到数据库
         try:
             task = create_task(
                 LogService.save_log(
                     trace_key=trace_key,
                     method_name=method_name,
-                    source="api",
+                    source=source_info,
                     app_id=app_id,
-                    user_id=user_id,
-                    uni_id=uni_id,
+                    user_uuid=user_uuid,
+                    user_nickname=user_nickName,
                     entity_id=request.query_params.get("entity_id"),
-                    type="error",
-                    tollgate="1-3",
+                    type="error",  # 错误类型固定为error
+                    tollgate=error_tollgate,
                     level="error",
                     para=None,
                     header=None,
                     body=error_message,
-                    memo=f"Duration: {process_time:.2f}ms, Exception occurred",
+                    memo=error_memo,
                     ip_address=client_ip
                 )
             )
@@ -264,22 +330,23 @@ def register_task(task):
     task.add_done_callback(_remove_task)
 
 # 移除敏感头部信息
-def sanitize_headers(headers: Dict[str, str]) -> Dict[str, str]:
+def sanitize_headers(headers):
     """移除敏感的头部信息"""
-    sensitive_keys = [
-        'authorization', 'cookie', 'x-api-key', 'api-key', 
-        'password', 'token', 'secret', 'credential'
-    ]
+    # sensitive_keys = [
+    #     'authorization', 'cookie', 'x-api-key', 'api-key', 
+    #     'password', 'token', 'secret', 'credential'
+    # ]
     
-    result = {}
-    for k, v in headers.items():
-        lower_k = k.lower()
-        if any(sensitive in lower_k for sensitive in sensitive_keys):
-            result[k] = "******" # 隐藏敏感信息
-        else:
-            result[k] = v
+    # result = {}
+    # for k, v in headers.items():
+    #     lower_k = k.lower()
+    #     if any(sensitive in lower_k for sensitive in sensitive_keys):
+    #         result[k] = "******" # 隐藏敏感信息
+    #     else:
+    #         result[k] = v
     
-    return result
+    # return result
+    return headers
 
 # 关闭时等待所有日志任务完成
 async def wait_for_log_tasks():
