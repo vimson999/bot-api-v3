@@ -64,9 +64,9 @@ async def init_db(use_alembic=True):
         # 开发环境可以直接使用SQLAlchemy创建表
         async with engine.begin() as conn:
             # 在开发环境中可以选择重新创建所有表
-            if settings.ENVIRONMENT == "development" and settings.DB_DROP_AND_CREATE_ALL:
-                logger.warning("删除所有现有表! 仅用于开发环境!")
-                await conn.run_sync(Base.metadata.drop_all)
+            # if settings.ENVIRONMENT == "development" and settings.DB_DROP_AND_CREATE_ALL:
+            #     logger.warning("删除所有现有表! 仅用于开发环境!")
+            #     await conn.run_sync(Base.metadata.drop_all)
             
             # 确保schema存在
             if settings.DB_SCHEMA and settings.DB_SCHEMA != "public":

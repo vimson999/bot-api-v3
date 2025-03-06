@@ -84,6 +84,13 @@ CREATE TABLE log_trace (
     )
 );
 
+
+ALTER TABLE log_trace 
+ADD COLUMN description TEXT,
+ADD COLUMN sort SMALLINT DEFAULT 0,
+ADD COLUMN status SMALLINT DEFAULT 1,
+ADD COLUMN updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
 -- 创建复合索引
 CREATE INDEX idx_log_trace_composite_1 ON log_trace(created_at, source, type);
 CREATE INDEX idx_log_trace_composite_2 ON log_trace(user_uuid, created_at);
@@ -129,4 +136,160 @@ COMMENT ON COLUMN log_trace.created_at IS '日志创建时间';
 
 
 
+
+
+
+
+
+-- 用户主表
+CREATE TABLE meta_user (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    only_id TEXT,
+    unified_id TEXT,
+    
+    -- 多平台信息
+    scope VARCHAR(20) NOT NULL CHECK (scope IN ('wx','xhs','web','mobile')),
+    uni_id TEXT,
+    open_id TEXT,  -- 使用pgp_sym_encrypt加密存储
+    
+    -- 基础信息
+    nick_name VARCHAR(100),
+    gender SMALLINT CHECK (gender IN (0,1,2)),
+    avatar TEXT,
+    region_code CHAR(6),
+    
+    memo TEXT,
+    description TEXT,
+        
+    -- 系统字段
+    sort SMALLINT DEFAULT 0,
+    status SMALLINT DEFAULT 1 CHECK (status IN (0,1,2)),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 应用表（含密钥安全）
+CREATE TABLE meta_app (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL UNIQUE,
+    domain TEXT,  -- 使用pgp_sym_encrypt加密
+    
+    public_key TEXT,
+    private_key TEXT,
+    key_version SMALLINT DEFAULT 1,
+    
+    callback_config TEXT,
+    ip_whitelist TEXT,
+    rate_limit INT DEFAULT 1000,
+    
+    memo TEXT,
+    description TEXT,
+    
+    -- 系统字段
+    sort SMALLINT DEFAULT 0,
+    status SMALLINT DEFAULT 1 CHECK (status IN (0,1,2)),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 用户组表
+CREATE TABLE meta_group (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    app_id UUID NOT NULL,
+    scope VARCHAR(20) NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    
+    level_type VARCHAR(20) CHECK (level_type IN ('vip','payment','credit')),
+    upgrade_rules JSONB,
+    capacity_rules JSONB,
+    
+    icon TEXT,
+    memo TEXT,
+    description TEXT,
+    
+    -- 系统字段
+    sort SMALLINT DEFAULT 0,
+    status SMALLINT DEFAULT 1 CHECK (status IN (0,1,2)),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- API路径表
+CREATE TABLE meta_path (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    path_pattern TEXT NOT NULL,
+    name TEXT,
+    http_method VARCHAR(10) CHECK (http_method IN ('GET','POST','PUT','DELETE','*')),
+    
+    version VARCHAR(10) DEFAULT '1.0.0',
+    deprecated_at TIMESTAMPTZ,
+    
+    auth_type VARCHAR(20) CHECK (auth_type IN ('none','basic','signature')),
+    
+    memo TEXT,
+    description TEXT,
+    
+    -- 系统字段
+    sort SMALLINT DEFAULT 0,
+    status SMALLINT DEFAULT 1 CHECK (status IN (0,1,2)),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 权限策略表
+CREATE TABLE meta_access_policy (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(100) NOT NULL,
+    
+    effect VARCHAR(10) CHECK (effect IN ('allow','deny')),
+    conditions JSONB,
+	
+    valid_from TIMESTAMPTZ,
+    valid_until TIMESTAMPTZ,
+    
+    priority SMALLINT DEFAULT 1,
+    memo TEXT,
+    description TEXT,
+    
+    status SMALLINT DEFAULT 1 CHECK (status IN (0,1,2)),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 策略绑定表
+CREATE TABLE rel_policy_binding (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    policy_id UUID NOT NULL,
+    target_type VARCHAR(10) CHECK (target_type IN ('user','group','app')),
+    target_id UUID NOT NULL,
+    path_id UUID NOT NULL,
+    
+    memo TEXT,
+    description TEXT,
+    
+    status SMALLINT DEFAULT 1 CHECK (status IN (0,1,2)),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 用户组关系表
+CREATE TABLE rel_user_group (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL,
+    group_id UUID NOT NULL,
+    joined_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    expired_at TIMESTAMPTZ,
+    
+    memo TEXT,
+    description TEXT,
+    
+    status SMALLINT DEFAULT 1 CHECK (status IN (0,1,2)),
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
