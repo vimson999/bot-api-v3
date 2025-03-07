@@ -15,6 +15,8 @@ import whisper
 import yt_dlp
 from pydub import AudioSegment
 
+from bot_api_v1.app.core.cache import cache_result
+
 # 导入项目日志模块
 from bot_api_v1.app.core.logger import logger
 # 导入服务日志装饰器
@@ -93,7 +95,8 @@ class ScriptService:
             logger.error(f"Whisper模型加载失败: {str(e)}", extra={"request_id": trace_key})
             raise AudioTranscriptionError(f"模型加载失败: {str(e)}") from e
     
-    @log_service_call(method_type="script", tollgate="20-1")
+    @log_service_call(method_type="script", tollgate="10-2")
+    @cache_result(expire_seconds=3600)
     async def download_audio(self, url: str) -> Tuple[str, str]:
         """
         下载音频并返回文件路径和标题
@@ -165,7 +168,8 @@ class ScriptService:
             self._cleanup_dir(download_dir, trace_key)
             raise AudioDownloadError(error_msg) from e
     
-    @log_service_call(method_type="script", tollgate="20-2")
+    @log_service_call(method_type="script", tollgate="10-3")
+    @cache_result(expire_seconds=3600)
     async def transcribe_audio(self, audio_path: str) -> str:
         """
         将音频转写为文本
