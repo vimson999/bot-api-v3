@@ -18,6 +18,8 @@ from bot_api_v1.app.db.init_db import init_db, wait_for_db
 from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.middlewares.rate_limit import RateLimitMiddleware
 
+from bot_api_v1.app.middlewares.logging_middleware import wait_for_log_tasks
+from bot_api_v1.app.api.routers import script
 
 def create_app():
     """创建并配置FastAPI应用"""
@@ -59,6 +61,7 @@ def create_app():
     # 注册路由
     app.include_router(api_router, prefix=settings.API_PREFIX)
     app.include_router(system_router, prefix="/system", tags=["system"])
+    app.include_router(script.router, prefix="/script")
 
     # 注册异常处理器
     app.add_exception_handler(Exception, http_exception_handler)
@@ -97,6 +100,7 @@ def create_app():
         logger.info("Application shutdown initiated")
         # 等待日志任务完成
         await wait_for_log_tasks()
+
         logger.info("Application shutdown completed")
         
     

@@ -12,6 +12,9 @@ from bot_api_v1.app.services.log_service import LogService
 import asyncio
 from asyncio import create_task
 from bot_api_v1.app.core.decorators import get_tollgate_config
+from bot_api_v1.app.core.context import request_ctx
+from datetime import datetime
+
 
 # 创建一个全局的任务跟踪器
 _TASK_REGISTRY = set()
@@ -20,6 +23,18 @@ async def log_middleware(request: Request, call_next):
     # 生成唯一追踪ID
     trace_key = str(uuid.uuid4())
     start_time = time.time()
+
+    # 初始化请求上下文 - 添加这部分
+    request_ctx.set_context({
+        'trace_key': trace_key,
+        'method_name': f"{request.method}:{request.url.path}",
+        'source': request.headers.get('x-source', 'api'),
+        'app_id': request.headers.get('x-app-id'),
+        'user_uuid': request.headers.get('x-user-uuid'),
+        'user_nickname': request.headers.get('x-user-nickname'),
+        'ip_address': request.client.host if request.client else None,
+        'request_time': datetime.now().isoformat(),
+    })
     
     # 安全获取请求头
     try:

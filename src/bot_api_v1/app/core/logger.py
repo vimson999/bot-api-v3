@@ -1,3 +1,137 @@
+# # core/logger.py
+# import logging
+# from typing import Optional, Dict, Any
+# from contextvars import ContextVar
+# import functools
+# import contextlib
+
+# from bot_api_v1.app.core.context import request_ctx
+
+# # Create the logger first
+# original_logger = logging.getLogger(__name__)  # Use the module's logger as the original logger
+
+# # Create a log context variable
+# _log_context_var: ContextVar[Dict[str, Any]] = ContextVar('log_context', default={})
+
+# class EnhancedLogger:
+#     """增强的日志器，支持上下文和数据库日志"""
+    
+#     def __init__(self, base_logger):
+#         self._logger = base_logger
+    
+#     def _log(self, level, msg, *args, **kwargs):
+#         """通用日志方法"""
+#         # 获取上下文中的trace_key
+#         if 'extra' not in kwargs:
+#             kwargs['extra'] = {}
+            
+#         if 'request_id' not in kwargs['extra']:
+#             try:
+#                 kwargs['extra']['request_id'] = request_ctx.get_trace_key()
+#             except Exception:
+#                 kwargs['extra']['request_id'] = 'system'
+        
+#         # 调用基础日志器记录文本日志
+#         log_method = getattr(self._logger, level)
+#         log_method(msg, *args, **kwargs)
+        
+#         # 检查是否需要同时记录到数据库
+#         context = _log_context_var.get()
+#         if context.get('db_log_enabled', False):
+#             self._log_to_database(level, msg, context, kwargs.get('extra', {}))
+    
+#     def _log_to_database(self, level, msg, context, extra):
+#         """记录日志到数据库"""
+#         try:
+#             from bot_api_v1.app.services.log_service import LogService
+#             import asyncio
+            
+#             # 从上下文获取必要信息
+#             trace_key = extra.get('request_id') or context.get('trace_key') or request_ctx.get_trace_key()
+#             method_name = context.get('method_name', 'unknown')
+            
+#             # 创建异步任务记录日志
+#             log_task = asyncio.create_task(
+#                 LogService.save_log(
+#                     trace_key=trace_key,
+#                     method_name=method_name,
+#                     source=context.get('source', 'api'),
+#                     type=context.get('type', 'service'),
+#                     tollgate=context.get('tollgate', '20-1'),
+#                     level=level,
+#                     body=msg,
+#                     memo=msg,
+#                 )
+#             )
+            
+#             # 可选：注册任务到任务追踪器
+#             try:
+#                 from bot_api_v1.app.middlewares.logging_middleware import register_task
+#                 register_task(log_task)
+#             except ImportError:
+#                 pass
+                
+#         except Exception as e:
+#             # 记录日志到数据库失败，使用文本日志记录错误
+#             self._logger.error(f"记录日志到数据库失败: {str(e)}")
+    
+#     def debug(self, msg, *args, **kwargs):
+#         self._log('debug', msg, *args, **kwargs)
+    
+#     def info(self, msg, *args, **kwargs):
+#         self._log('info', msg, *args, **kwargs)
+    
+#     def warning(self, msg, *args, **kwargs):
+#         self._log('warning', msg, *args, **kwargs)
+    
+#     def error(self, msg, *args, **kwargs):
+#         self._log('error', msg, *args, **kwargs)
+    
+#     def critical(self, msg, *args, **kwargs):
+#         self._log('critical', msg, *args, **kwargs)
+    
+#     def exception(self, msg, *args, **kwargs):
+#         if 'exc_info' not in kwargs:
+#             kwargs['exc_info'] = True
+#         self._log('error', msg, *args, **kwargs)
+
+#     @classmethod
+#     def enable_db_logging(cls, **context_info):
+#         """启用数据库日志记录"""
+#         context = _log_context_var.get().copy()
+#         context['db_log_enabled'] = True
+#         context.update(context_info)
+#         _log_context_var.set(context)
+#         return context
+    
+#     @classmethod
+#     def disable_db_logging(cls):
+#         """禁用数据库日志记录"""
+#         context = _log_context_var.get().copy()
+#         context['db_log_enabled'] = False
+#         _log_context_var.set(context)
+#         return context
+
+#     @classmethod
+#     @contextlib.contextmanager
+#     def db_logging_context(cls, **context_info):
+#         """数据库日志上下文管理器"""
+#         previous = _log_context_var.get().copy()
+#         cls.enable_db_logging(**context_info)
+#         try:
+#             yield
+#         finally:
+#             _log_context_var.set(previous)
+
+# # 创建增强的logger实例
+# logger = EnhancedLogger(original_logger)
+
+# # 导出增强的logger替代原始logger
+# __all__ = ['logger']
+
+
+
+
 import os
 import logging
 import json

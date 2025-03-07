@@ -13,7 +13,7 @@ class ErrorCode(IntEnum):
 
 T = TypeVar('T')
 
-class BaseResponse(BaseModel):
+class BaseResponse(BaseModel, Generic[T]):
     code: int = Field(default=ErrorCode.SUCCESS, example=200, 
                      description="遵循HTTP状态码规范")
     message: str = Field(default="success", example="操作成功",
@@ -27,6 +27,7 @@ class BaseResponse(BaseModel):
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }
+        arbitrary_types_allowed = True
 
 class PaginatedData(BaseModel):
     current_page: int = Field(ge=1, example=1)
@@ -35,5 +36,5 @@ class PaginatedData(BaseModel):
     total_pages: int = Field(ge=0, example=10)
     items: list = Field(default_factory=list)
 
-class PaginatedResponse(BaseResponse):
-    data: PaginatedData
+class PaginatedResponse(BaseResponse[PaginatedData]):
+    pass
