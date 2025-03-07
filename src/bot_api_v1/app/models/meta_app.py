@@ -18,6 +18,8 @@ class MetaApp(Base):
     public_key: Optional[str] = Column(TEXT, nullable=True)
     private_key: Optional[str] = Column(TEXT, nullable=True)
     key_version: int = Column(SmallInteger, default=1, nullable=False)
+    sign_type: Optional[str] = Column(TEXT, nullable=True)
+    sign_config: Optional[str] = Column(TEXT, nullable=True)
     
     # Configuration
     callback_config: Optional[str] = Column(TEXT, nullable=True)
