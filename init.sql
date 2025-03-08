@@ -296,3 +296,9 @@ CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
 ALTER TABLE meta_app ADD COLUMN sign_type VARCHAR(50) NOT NULL DEFAULT 'default';
 ALTER TABLE meta_app ADD COLUMN sign_config JSONB;
 
+ALTER USER postgres WITH PASSWORD 'psl#@!logIN4SS2000'
+
+
+
+
+uvicorn bot_api_v1.app.core.app:create_app --reload --host 0.0.0.0 --port 8000

@@ -77,3 +77,12 @@ Jinja2==3.1.5
 MarkupSafe==3.0.2
 charset-normalizer==3.4.1
 urllib3==2.3.0
+
+
+
+asyncio
+greenlet
+loguru
+colorama
+black
+cryptography

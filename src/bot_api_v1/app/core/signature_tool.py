@@ -51,7 +51,7 @@ def generate_hmac_sha256_signature(
     return signature
 
 
-def generate_test_signature(app_id: str, private_key: str, message: str) -> Dict[str, str]:
+def generate_test_signature(app_id: str, private_key: str, message: str) -> Dict[str, Any]:
     """
     为测试接口生成签名和所需请求头
     
@@ -65,12 +65,13 @@ def generate_test_signature(app_id: str, private_key: str, message: str) -> Dict
     """
     # 创建请求体
     body = {"message": message}
+    body_str = json.dumps(body, separators=(',', ':'), ensure_ascii=False)
     
     # 生成时间戳
     timestamp = int(time.time())
     
     # 生成签名
-    signature = generate_hmac_sha256_signature(private_key, body, timestamp)
+    signature = generate_hmac_sha256_signature(private_key, body_str, timestamp)
     
     # 返回请求头
     headers = {
@@ -83,6 +84,9 @@ def generate_test_signature(app_id: str, private_key: str, message: str) -> Dict
     return {
         "headers": headers,
         "body": body,
+        "body_str": body_str,
+        "timestamp": timestamp,
+        "signature": signature,
         "curl_command": generate_curl_command(headers, body)
     }
 
@@ -110,24 +114,69 @@ def generate_curl_command(headers: Dict[str, str], body: Dict[str, Any]) -> str:
     return curl_command
 
 
+def debug_signature(app_id: str, private_key: str, body: str, timestamp: int, received_signature: str) -> Dict[str, Any]:
+    """
+    调试签名问题
+    
+    Args:
+        app_id: 应用ID
+        private_key: 私钥
+        body: 请求体字符串
+        timestamp: 时间戳
+        received_signature: 收到的签名
+        
+    Returns:
+        包含调试信息的字典
+    """
+    # 构造待签名字符串
+    string_to_sign = f"{body}&timestamp={timestamp}"
+    
+    # 计算签名
+    hmac_obj = hmac.new(
+        private_key.encode(),
+        string_to_sign.encode(),
+        hashlib.sha256
+    )
+    expected_signature = base64.b64encode(hmac_obj.digest()).decode()
+    
+    # 比较签名
+    signatures_match = hmac.compare_digest(expected_signature, received_signature)
+    
+    return {
+        "app_id": app_id,
+        "body": body,
+        "timestamp": timestamp,
+        "string_to_sign": string_to_sign,
+        "expected_signature": expected_signature,
+        "received_signature": received_signature,
+        "signatures_match": signatures_match,
+        "private_key_used": private_key,
+    }
+
+
 if __name__ == "__main__":
     """
     使用示例
     """
     # 示例应用信息
-    app_id = "YOUR_APP_ID"
-    private_key = "YOUR_PRIVATE_KEY"
-    message = "Hello, world!"
+    app_id = "16dad276-16e3-44d9-aefd-9fbee35ffb0b"  # 替换为你的实际app_id
+    private_key = "test_secret_key"  # 替换为你的实际私钥
+    message = "测试验签功能"
     
-    # 生成签名和测试命令
+    # 生成签名和测试信息
     result = generate_test_signature(app_id, private_key, message)
     
-    print("=== 请求头 ===")
+    print("=== 签名信息 ===")
+    print(f"待签名字符串: {result['body_str']}&timestamp={result['timestamp']}")
+    print(f"私钥: {private_key}")
+    print(f"签名: {result['signature']}")
+    
+    print("\n=== 请求头 ===")
     for k, v in result["headers"].items():
         print(f"{k}: {v}")
     
     print("\n=== 请求体 ===")
-    print(json.dumps(result["body"], indent=2))
+    print(json.dumps(result["body"], ensure_ascii=False))
     
     print("\n=== CURL 命令 ===")
     print(result["curl_command"])

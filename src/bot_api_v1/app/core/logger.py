@@ -1,238 +1,125 @@
-# # core/logger.py
-# import logging
-# from typing import Optional, Dict, Any
-# from contextvars import ContextVar
-# import functools
-# import contextlib
+"""
+日志系统模块
 
-# from bot_api_v1.app.core.context import request_ctx
-
-# # Create the logger first
-# original_logger = logging.getLogger(__name__)  # Use the module's logger as the original logger
-
-# # Create a log context variable
-# _log_context_var: ContextVar[Dict[str, Any]] = ContextVar('log_context', default={})
-
-# class EnhancedLogger:
-#     """增强的日志器，支持上下文和数据库日志"""
-    
-#     def __init__(self, base_logger):
-#         self._logger = base_logger
-    
-#     def _log(self, level, msg, *args, **kwargs):
-#         """通用日志方法"""
-#         # 获取上下文中的trace_key
-#         if 'extra' not in kwargs:
-#             kwargs['extra'] = {}
-            
-#         if 'request_id' not in kwargs['extra']:
-#             try:
-#                 kwargs['extra']['request_id'] = request_ctx.get_trace_key()
-#             except Exception:
-#                 kwargs['extra']['request_id'] = 'system'
-        
-#         # 调用基础日志器记录文本日志
-#         log_method = getattr(self._logger, level)
-#         log_method(msg, *args, **kwargs)
-        
-#         # 检查是否需要同时记录到数据库
-#         context = _log_context_var.get()
-#         if context.get('db_log_enabled', False):
-#             self._log_to_database(level, msg, context, kwargs.get('extra', {}))
-    
-#     def _log_to_database(self, level, msg, context, extra):
-#         """记录日志到数据库"""
-#         try:
-#             from bot_api_v1.app.services.log_service import LogService
-#             import asyncio
-            
-#             # 从上下文获取必要信息
-#             trace_key = extra.get('request_id') or context.get('trace_key') or request_ctx.get_trace_key()
-#             method_name = context.get('method_name', 'unknown')
-            
-#             # 创建异步任务记录日志
-#             log_task = asyncio.create_task(
-#                 LogService.save_log(
-#                     trace_key=trace_key,
-#                     method_name=method_name,
-#                     source=context.get('source', 'api'),
-#                     type=context.get('type', 'service'),
-#                     tollgate=context.get('tollgate', '20-1'),
-#                     level=level,
-#                     body=msg,
-#                     memo=msg,
-#                 )
-#             )
-            
-#             # 可选：注册任务到任务追踪器
-#             try:
-#                 from bot_api_v1.app.middlewares.logging_middleware import register_task
-#                 register_task(log_task)
-#             except ImportError:
-#                 pass
-                
-#         except Exception as e:
-#             # 记录日志到数据库失败，使用文本日志记录错误
-#             self._logger.error(f"记录日志到数据库失败: {str(e)}")
-    
-#     def debug(self, msg, *args, **kwargs):
-#         self._log('debug', msg, *args, **kwargs)
-    
-#     def info(self, msg, *args, **kwargs):
-#         self._log('info', msg, *args, **kwargs)
-    
-#     def warning(self, msg, *args, **kwargs):
-#         self._log('warning', msg, *args, **kwargs)
-    
-#     def error(self, msg, *args, **kwargs):
-#         self._log('error', msg, *args, **kwargs)
-    
-#     def critical(self, msg, *args, **kwargs):
-#         self._log('critical', msg, *args, **kwargs)
-    
-#     def exception(self, msg, *args, **kwargs):
-#         if 'exc_info' not in kwargs:
-#             kwargs['exc_info'] = True
-#         self._log('error', msg, *args, **kwargs)
-
-#     @classmethod
-#     def enable_db_logging(cls, **context_info):
-#         """启用数据库日志记录"""
-#         context = _log_context_var.get().copy()
-#         context['db_log_enabled'] = True
-#         context.update(context_info)
-#         _log_context_var.set(context)
-#         return context
-    
-#     @classmethod
-#     def disable_db_logging(cls):
-#         """禁用数据库日志记录"""
-#         context = _log_context_var.get().copy()
-#         context['db_log_enabled'] = False
-#         _log_context_var.set(context)
-#         return context
-
-#     @classmethod
-#     @contextlib.contextmanager
-#     def db_logging_context(cls, **context_info):
-#         """数据库日志上下文管理器"""
-#         previous = _log_context_var.get().copy()
-#         cls.enable_db_logging(**context_info)
-#         try:
-#             yield
-#         finally:
-#             _log_context_var.set(previous)
-
-# # 创建增强的logger实例
-# logger = EnhancedLogger(original_logger)
-
-# # 导出增强的logger替代原始logger
-# __all__ = ['logger']
-
-
-
-
+提供全局日志记录功能，使用loguru增强日志展示，支持请求上下文和链路追踪。
+"""
 import os
-import logging
+import sys
 import json
 from pathlib import Path
-from logging.handlers import TimedRotatingFileHandler
-import gzip
-import shutil
+from datetime import datetime
+
+from loguru import logger as loguru_logger
+from colorama import init as colorama_init
 from dotenv import load_dotenv
 
+from bot_api_v1.app.core.context import request_ctx
+
+# 初始化colorama，确保在Windows平台上也能正确显示颜色
+colorama_init()
+
+# 加载环境变量
 load_dotenv()
 
-# 自定义GZip压缩旋转器
-class GZipRotator:
-    def __call__(self, source, dest):
-        with open(source, 'rb') as f_in:
-            with gzip.open(f"{dest}.gz", 'wb') as f_out:
-                shutil.copyfileobj(f_in, f_out)
-        os.remove(source)  # 删除未压缩的原始文件
+# 移除默认的loguru处理器
+loguru_logger.remove()
 
-class RequestFormatter(logging.Formatter):
-    def format(self, record):
-        # 设置缺省值
-        if not hasattr(record, 'request_id'):
-            record.request_id = 'system'
-        
-        # 处理 headers        
-        if hasattr(record, 'headers'):
-            # 尝试将 headers 序列化为 JSON
-            try:
-                if isinstance(record.headers, dict):
-                    record.headers = json.dumps(record.headers, ensure_ascii=False)
-                elif isinstance(record.headers, str):
-                    # 如果已经是字符串，检查是否是有效的 JSON
-                    try:
-                        json.loads(record.headers)
-                    except:
-                        record.headers = '{"error": "Invalid JSON string"}'
-                else:
-                    record.headers = '{"error": "Headers is neither dict nor string"}'
-            except:
-                record.headers = '{"error": "Serialization failed"}'
-        else:
-            record.headers = '{}'
-            
-        # 添加格式化内容并添加两个空行
-        return super().format(record) + "\n\n"
 
-def setup_logger(name: str = "api"):
+def setup_logger():
+    """初始化并配置logger"""
+    # 获取环境变量
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    logger = logging.getLogger(name)
-    logger.setLevel(log_level)
+    environment = os.getenv("ENVIRONMENT", "development").lower()
     
-    # 防止重复日志
-    if logger.handlers:
-        return logger
-
-    if "LOG_LEVEL" not in os.environ:
-        print("LOG_LEVEL not set, using default 'INFO'")
-
-    formatter = RequestFormatter(
-        '[%(asctime)s] [%(request_id)s] %(levelname)s in %(module)s: %(message)s | HEADERS=%(headers)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
-    )
-
     # 设置日志目录
-    LOG_DIR = Path(os.getenv("LOG_DIR", Path(__file__).parent.parent / "logs"))
+    log_dir = Path(os.getenv("LOG_DIR", Path(__file__).parent.parent / "logs"))
     try:
-        LOG_DIR.mkdir(exist_ok=True)
+        log_dir.mkdir(exist_ok=True)
     except Exception as e:
-        print(f"Failed to create log directory: {e}")
+        print(f"无法创建日志目录: {e}")
         raise
-
-    # 基于时间的文件处理器，每天午夜轮转
-    file_handler = TimedRotatingFileHandler(
-        filename=LOG_DIR / "api.log",
-        when='midnight',        # 每天午夜创建新文件
-        interval=1,             # 时间间隔为1天
-        backupCount=30,         # 保留30天的日志
-        encoding="utf-8",
-        utc=True                # 使用UTC时间，避免时区问题
+    
+    # 添加控制台输出处理器
+    loguru_logger.add(
+        sys.stderr,
+        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>[{extra[request_id]}]</blue> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> | <level>{message}</level>",
+        level=log_level,
+        colorize=True,
+        backtrace=True,
+        diagnose=True,
     )
     
-    # 设置文件名后缀格式为日期
-    file_handler.suffix = "%Y-%m-%d"
-    file_handler.extMatch = r"^\d{4}-\d{2}-\d{2}$"
-    file_handler.setFormatter(formatter)
+    # 添加文件处理器
+    loguru_logger.add(
+        log_dir / "api.log",
+        format="{time:YYYY-MM-DD HH:mm:ss} | [{extra[request_id]}] | {level: <8} | {name}:{function} | {message}",
+        level=log_level,
+        rotation="00:00",  # 每天午夜轮转
+        compression="gz",  # 使用gzip压缩
+        retention="30 days",  # 保留30天
+        encoding="utf-8",
+        backtrace=True,
+        diagnose=True,
+    )
     
-    # 使用GZip压缩旋转器，节省空间
-    file_handler.rotator = GZipRotator()
-    
-    # 添加处理器
-    logger.addHandler(file_handler)
-    
-    # 生产环境通常不需要控制台输出，但可以根据环境变量决定
-    if os.getenv("ENVIRONMENT", "production").lower() != "production":
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        logger.addHandler(console_handler)
-    
-    logger.info("Logger initialization completed", extra={"request_id": "system"})
-    return logger
+    return loguru_logger.bind(request_id="system")
 
-# 延迟初始化
-logger = setup_logger()
+
+class LoggerInterface:
+    """日志接口封装，提供与原标准logger兼容的方法"""
+    
+    def __init__(self, logger_instance):
+        self._logger = logger_instance
+    
+    def debug(self, msg, *args, **kwargs):
+        """记录DEBUG级别日志"""
+        extra = self._get_extra(kwargs)
+        self._logger.bind(**extra).debug(msg)
+    
+    def info(self, msg, *args, **kwargs):
+        """记录INFO级别日志"""
+        extra = self._get_extra(kwargs)
+        self._logger.bind(**extra).info(msg)
+    
+    def warning(self, msg, *args, **kwargs):
+        """记录WARNING级别日志"""
+        extra = self._get_extra(kwargs)
+        self._logger.bind(**extra).warning(msg)
+    
+    def error(self, msg, *args, **kwargs):
+        """记录ERROR级别日志"""
+        extra = self._get_extra(kwargs)
+        exc_info = kwargs.get('exc_info', False)
+        self._logger.bind(**extra).error(msg, exception=exc_info)
+    
+    def critical(self, msg, *args, **kwargs):
+        """记录CRITICAL级别日志"""
+        extra = self._get_extra(kwargs)
+        exc_info = kwargs.get('exc_info', False)
+        self._logger.bind(**extra).critical(msg, exception=exc_info)
+    
+    def exception(self, msg, *args, **kwargs):
+        """记录带有异常堆栈的ERROR级别日志"""
+        extra = self._get_extra(kwargs)
+        self._logger.bind(**extra).exception(msg)
+    
+    def _get_extra(self, kwargs):
+        """从kwargs中提取extra信息"""
+        extra = kwargs.get('extra', {})
+        if 'request_id' not in extra:
+            try:
+                extra['request_id'] = request_ctx.get_trace_key()
+            except Exception:
+                extra['request_id'] = 'system'
+        return extra
+
+
+# 初始化logger并创建接口
+_base_logger = setup_logger()
+logger = LoggerInterface(_base_logger)
+
+# 导出日志器
+__all__ = ["logger"]
+
+# 记录日志初始化完成
+logger.info("Logger initialization completed with loguru")
