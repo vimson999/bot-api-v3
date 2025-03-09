@@ -86,3 +86,7 @@ loguru
 colorama
 black
 cryptography
+pyopenssl
+pyjwt
+rsa 
+pycryptodome

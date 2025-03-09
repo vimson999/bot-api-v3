@@ -27,9 +27,13 @@ INSERT INTO meta_app (
 
 select * from meta_app
 WHERE 1=1
-and name = 'test_signature_app'
+-- and name = 'test_signature_app'
+AND id = '16dad276-16e3-44d9-aefd-9fbee35ffb0b'
 order by created_at desc 
 limit 100;
+
+
+
 
 
 
