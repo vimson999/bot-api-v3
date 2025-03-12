@@ -46,6 +46,7 @@ def setup_logger():
         # 日志格式应该使用与上下文相同的变量名
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+            "<blue>{extra[tollgate]}</blue> | "
             "<blue>{extra[source]}</blue> | "
             "<cyan>{extra[app_id]}</cyan> | "
             "<magenta>{extra[user_id]}</magenta> | "
@@ -66,6 +67,7 @@ def setup_logger():
         log_dir / "api.log",
         format=(
             "{time:YYYY-MM-DD HH:mm:ss} | "
+            "{extra[tollgate]} | "
             "{extra[source]} | "
             "{extra[app_id]} | "
             "{extra[user_id]} | "
@@ -84,7 +86,7 @@ def setup_logger():
         diagnose=True,
     )
     
-    return loguru_logger.bind(request_id="-", source="-", app_id="-", user_id="-", user_name="-")
+    return loguru_logger.bind(request_id="-", source="-", app_id="-", user_id="-", user_name="-",tollgate="-")
 
 
 class LoggerInterface:
@@ -125,42 +127,37 @@ class LoggerInterface:
         extra = self._get_extra(kwargs)
         self._logger.bind(**extra).exception(msg)
     
+    
     def _get_extra(self, kwargs):
         """从kwargs中提取extra信息并增加请求上下文信息"""
         extra = kwargs.get('extra', {})
         
+        # 获取最新的上下文数据
+        current_ctx = request_ctx.get_context()
+        
         # 如果没有提供extra中的字段，则从请求上下文中获取
         if 'request_id' not in extra:
-            try:
-                extra['request_id'] = request_ctx.get_trace_key()
-            except Exception:
-                extra['request_id'] = 'system'
+            extra['request_id'] = current_ctx.get('trace_key', 'system')
         
         # 添加其他上下文信息
         if 'source' not in extra:
-            try:
-                extra['source'] = request_ctx.get_source()
-            except Exception:
-                extra['source'] = '-'
+            extra['source'] = current_ctx.get('source', '-')
         
         if 'app_id' not in extra:
-            try:
-                extra['app_id'] = request_ctx.get_app_id()
-            except Exception:
-                extra['app_id'] = '-'
+            extra['app_id'] = current_ctx.get('app_id', '-')
         
         if 'user_id' not in extra:
-            try:
-                extra['user_id'] = request_ctx.get_user_id()
-            except Exception:
-                extra['user_id'] = '-'
+            extra['user_id'] = current_ctx.get('user_id', '-')
         
         if 'user_name' not in extra:
-            try:
-                extra['user_name'] = request_ctx.get_user_name()
-            except Exception:
-                extra['user_name'] = '-'
-    
+            extra['user_name'] = current_ctx.get('user_name', '-')
+
+        # 直接从上下文获取最新的tollgate值
+        if 'tollgate' not in extra:
+            base_tollgate = current_ctx.get('base_tollgate', '-')
+            current_tollgate = current_ctx.get('current_tollgate', '-')
+            extra['tollgate'] = f'{base_tollgate}-{current_tollgate}'
+        
         return extra
 
 

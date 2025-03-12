@@ -89,6 +89,17 @@ class RequestContext:
     def get_user_name() -> str:
         """获取用户名称"""
         return _request_ctx_var.get().get("user_name", "-")
+    
+
+    @staticmethod
+    def get_base_tollgate() -> str:
+        """获取用户ID"""
+        return _request_ctx_var.get().get("base_tollgate", "-")
+    
+    @staticmethod
+    def get_current_tollgate() -> str:
+        """获取用户名称"""
+        return _request_ctx_var.get().get("current_tollgate", "-")
 
 
 # 默认导出的请求上下文实例

@@ -1,4 +1,3 @@
-
 import logging
 import time
 from fastapi import FastAPI, Request, Depends
@@ -13,12 +12,10 @@ from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.exceptions import http_exception_handler, CustomException
 from bot_api_v1.app.api.main import router as api_router
 from bot_api_v1.app.api.system import router as system_router
-from bot_api_v1.app.middlewares.logging_middleware import wait_for_log_tasks
+from bot_api_v1.app.tasks.base import wait_for_tasks, wait_for_log_tasks, TASK_TYPE_LOG
 from bot_api_v1.app.db.init_db import init_db, wait_for_db
 from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.middlewares.rate_limit import RateLimitMiddleware
-
-from bot_api_v1.app.middlewares.logging_middleware import wait_for_log_tasks
 from bot_api_v1.app.api.routers import script
 
 def create_app():
@@ -35,28 +32,25 @@ def create_app():
     app.middleware("http")(log_middleware)
 
     # 2. 添加CORS中间件
-    if settings.CORS_ORIGINS:
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=settings.CORS_ORIGINS,
-            allow_credentials=True,
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+    # if settings.CORS_ORIGINS:
+    #     app.add_middleware(
+    #         CORSMiddleware,
+    #         allow_origins=settings.CORS_ORIGINS,
+    #         allow_credentials=True,
+    #         allow_methods=["*"],
+    #         allow_headers=["*"],
+    #     )
     
+    # # 3. 添加主机验证中间件
+    # if settings.ENVIRONMENT == "production":
+    #     app.add_middleware(
+    #         TrustedHostMiddleware, 
+    #         allowed_hosts=settings.ALLOWED_HOSTS
+    #     )
 
-    # 3. 添加主机验证中间件
-    if settings.ENVIRONMENT == "production":
-        app.add_middleware(
-            TrustedHostMiddleware, 
-            allowed_hosts=settings.ALLOWED_HOSTS
-        )
-
-
-    # 4. 添加速率限制中间件
-    if settings.ENVIRONMENT == "production":
-        app.add_middleware(RateLimitMiddleware)
-
+    # # 4. 添加速率限制中间件
+    # if settings.ENVIRONMENT == "production":
+    #     app.add_middleware(RateLimitMiddleware)
 
     # 注册路由
     app.include_router(api_router, prefix=settings.API_PREFIX)
@@ -66,7 +60,6 @@ def create_app():
     # 注册异常处理器
     app.add_exception_handler(Exception, http_exception_handler)
     
-  
     # 添加启动事件处理器
     @app.on_event("startup")
     async def startup_event():
@@ -79,7 +72,7 @@ def create_app():
                 logger.error("Cannot connect to database, application may not function properly")
             
             # 初始化数据库
-            await init_db()
+            # await init_db()
             
             # 仅在开发环境中创建测试数据
             # if settings.ENVIRONMENT == "development" and settings.CREATE_TEST_DATA:
@@ -94,14 +87,24 @@ def create_app():
                 import sys
                 sys.exit(1)
 
-#     # 添加关闭事件处理器
+    # 添加关闭事件处理器
     @app.on_event("shutdown")
     async def shutdown_event():
         logger.info("Application shutdown initiated")
-        # 等待日志任务完成
-        await wait_for_log_tasks()
-
-        logger.info("Application shutdown completed")
         
+        try:
+            # 首先等待日志任务完成 - 使用较短的超时时间
+            logger.info("Waiting for log tasks to complete...")
+            await wait_for_log_tasks(timeout=5)  # 日志任务等待5秒
+            
+            # 然后等待其他所有任务完成 - 可以使用较长的超时时间
+            logger.info("Waiting for all remaining tasks to complete...")
+            await wait_for_tasks(timeout=30)  # 其他任务等待30秒
+            
+            logger.info("All tasks completed successfully")
+        except Exception as e:
+            logger.error(f"Error during task shutdown: {str(e)}", exc_info=True)
+        
+        logger.info("Application shutdown completed")
     
     return app

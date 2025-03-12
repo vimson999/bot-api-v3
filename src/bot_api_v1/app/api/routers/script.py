@@ -69,7 +69,7 @@ class ScriptResponse(BaseModel):
 @TollgateConfig(
     title="音频转写",
     type="transcription",
-    base_tollgate="20",
+    base_tollgate="18",
     current_tollgate="1",
     plat="api"
 )
