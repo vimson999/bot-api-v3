@@ -16,6 +16,7 @@ from datetime import datetime
 _request_ctx_var: ContextVar[Dict[str, Any]] = ContextVar('request_context', default={})
 
 
+
 class RequestContext:
     """请求上下文管理类"""
     
@@ -73,6 +74,21 @@ class RequestContext:
     def get_request_id() -> str:
         """获取请求ID，与trace_key同义"""
         return RequestContext.get_trace_key()
+        
+    @staticmethod
+    def get_app_id() -> str:
+        """获取应用ID"""
+        return _request_ctx_var.get().get("app_id", "-")
+    
+    @staticmethod
+    def get_user_id() -> str:
+        """获取用户ID"""
+        return _request_ctx_var.get().get("user_id", "-")
+    
+    @staticmethod
+    def get_user_name() -> str:
+        """获取用户名称"""
+        return _request_ctx_var.get().get("user_name", "-")
 
 
 # 默认导出的请求上下文实例

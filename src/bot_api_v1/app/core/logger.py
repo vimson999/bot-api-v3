@@ -3,36 +3,37 @@
 
 提供全局日志记录功能，使用loguru增强日志展示，支持请求上下文和链路追踪。
 """
-import os
 import sys
 import json
-from pathlib import Path
 from datetime import datetime
 
 from loguru import logger as loguru_logger
 from colorama import init as colorama_init
-from dotenv import load_dotenv
 
 from bot_api_v1.app.core.context import request_ctx
+from bot_api_v1.app.core.config import settings
+from pathlib import Path
+from dotenv import load_dotenv
+import os
 
 # 初始化colorama，确保在Windows平台上也能正确显示颜色
 colorama_init()
 
-# 加载环境变量
-load_dotenv()
-
 # 移除默认的loguru处理器
 loguru_logger.remove()
 
+# 加载环境变量
+load_dotenv()
 
 def setup_logger():
     """初始化并配置logger"""
     # 获取环境变量
-    log_level = os.getenv("LOG_LEVEL", "INFO").upper()
-    environment = os.getenv("ENVIRONMENT", "development").lower()
+    log_level = settings.LOG_LEVEL.upper()
+    environment = settings.ENVIRONMENT.lower()
     
     # 设置日志目录
     log_dir = Path(os.getenv("LOG_DIR", Path(__file__).parent.parent / "logs"))
+    
     try:
         log_dir.mkdir(exist_ok=True)
     except Exception as e:
@@ -42,7 +43,18 @@ def setup_logger():
     # 添加控制台输出处理器
     loguru_logger.add(
         sys.stderr,
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>[{extra[request_id]}]</blue> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> | <level>{message}</level>",
+        # 日志格式应该使用与上下文相同的变量名
+        format=(
+            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+            "<blue>{extra[source]}</blue> | "
+            "<cyan>{extra[app_id]}</cyan> | "
+            "<magenta>{extra[user_id]}</magenta> | "
+            "<yellow>{extra[user_name]}</yellow> | "
+            "<bold><blue>[{extra[request_id]}]</blue></bold> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan> | "
+            "<level>{message}</level>"
+        ),
         level=log_level,
         colorize=True,
         backtrace=True,
@@ -52,7 +64,17 @@ def setup_logger():
     # 添加文件处理器
     loguru_logger.add(
         log_dir / "api.log",
-        format="{time:YYYY-MM-DD HH:mm:ss} | [{extra[request_id]}] | {level: <8} | {name}:{function} | {message}",
+        format=(
+            "{time:YYYY-MM-DD HH:mm:ss} | "
+            "{extra[source]} | "
+            "{extra[app_id]} | "
+            "{extra[user_id]} | "
+            "{extra[user_name]} | "
+            "[{extra[request_id]}] | "
+            "{level: <8} | "
+            "{name}:{function} | "
+            "{message}"
+        ),        
         level=log_level,
         rotation="00:00",  # 每天午夜轮转
         compression="gz",  # 使用gzip压缩
@@ -62,7 +84,7 @@ def setup_logger():
         diagnose=True,
     )
     
-    return loguru_logger.bind(request_id="system")
+    return loguru_logger.bind(request_id="-", source="-", app_id="-", user_id="-", user_name="-")
 
 
 class LoggerInterface:
@@ -104,13 +126,41 @@ class LoggerInterface:
         self._logger.bind(**extra).exception(msg)
     
     def _get_extra(self, kwargs):
-        """从kwargs中提取extra信息"""
+        """从kwargs中提取extra信息并增加请求上下文信息"""
         extra = kwargs.get('extra', {})
+        
+        # 如果没有提供extra中的字段，则从请求上下文中获取
         if 'request_id' not in extra:
             try:
                 extra['request_id'] = request_ctx.get_trace_key()
             except Exception:
                 extra['request_id'] = 'system'
+        
+        # 添加其他上下文信息
+        if 'source' not in extra:
+            try:
+                extra['source'] = request_ctx.get_source()
+            except Exception:
+                extra['source'] = '-'
+        
+        if 'app_id' not in extra:
+            try:
+                extra['app_id'] = request_ctx.get_app_id()
+            except Exception:
+                extra['app_id'] = '-'
+        
+        if 'user_id' not in extra:
+            try:
+                extra['user_id'] = request_ctx.get_user_id()
+            except Exception:
+                extra['user_id'] = '-'
+        
+        if 'user_name' not in extra:
+            try:
+                extra['user_name'] = request_ctx.get_user_name()
+            except Exception:
+                extra['user_name'] = '-'
+    
         return extra
 
 
@@ -123,5 +173,3 @@ __all__ = ["logger"]
 
 # 记录日志初始化完成
 logger.info("Logger initialization completed with loguru")
-
-

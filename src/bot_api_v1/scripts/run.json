@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "FastAPI Debug (create_app)",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "-m",  // 仅保留 "-m"
+        "args": [
+          "uvicorn",  // 模块名单独作为参数
+          "bot_api_v1.app.core.app:create_app",
+          "--reload",
+          "--host=0.0.0.0",
+          "--port=8000"
+        ],
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src"
+        },
+        "justMyCode": false,
+        "console": "integratedTerminal",
+        "cwd": "${workspaceFolder}"
+      }
+    ]
+  }

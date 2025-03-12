@@ -8,6 +8,7 @@ import hmac
 import hashlib
 import base64
 import json
+import sys
 import time
 from typing import Dict, Any, Optional, Type, Callable
 import functools
@@ -15,7 +16,7 @@ from datetime import datetime, timedelta
 
 from fastapi import Request, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, and_, or_, func
 
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
@@ -83,7 +84,12 @@ class SignatureVerifier:
                 session_to_close = db
 
             # 使用异步查询方法获取应用信息
-            stmt = select(MetaApp).where(MetaApp.id == UUID(app_id))
+            stmt = select(MetaApp).where(
+                and_(
+                    MetaApp.id == UUID(app_id),
+                    MetaApp.status == 1
+                )
+            )            
             result = await db.execute(stmt)
             app = result.scalar_one_or_none()
 
@@ -105,12 +111,6 @@ class SignatureVerifier:
                 "domain": app.domain,
             }
 
-            # 检查应用状态
-            if app.status != 1:
-                logger.error(
-                    f"应用状态异常: {app.status}", extra={"request_id": trace_key}
-                )
-                raise ValueError(f"应用状态异常: {app.status}")
 
             # 从app_info添加sign_type和sign_config
             if app.sign_type:
@@ -333,9 +333,9 @@ class HmacSha256Verifier(SignatureVerifier):
                     extra={"request_id": trace_key},
                 )
 
-                logger.debug(
-                    f"预期签名: {expected_signature}", extra={"request_id": trace_key}
-                )
+            logger.debug(
+                f"预期签名: {expected_signature}", extra={"request_id": trace_key}
+            )
             logger.debug(f"收到的签名: {signature}", extra={"request_id": trace_key})
 
             # 先用我们生成的签名验证
@@ -367,6 +367,7 @@ class HmacSha256Verifier(SignatureVerifier):
                 exc_info=True,
             )
             raise
+
 
 @SignatureVerifier.register("rsa")
 class RsaVerifier(SignatureVerifier):
@@ -482,13 +483,299 @@ class RsaVerifier(SignatureVerifier):
             )
             raise
 
-def require_signature(sign_type: str = None, exempt: bool = False):
+
+async def check_app_permission(app_id: str, path: str, method: str, db: AsyncSession, request: Request = None) -> bool:
+    """
+    检查应用是否有权限访问指定的API路径
+    
+    Args:
+        app_id: 应用ID
+        path: API路径
+        method: HTTP方法(GET, POST等)
+        db: 数据库会话
+        request: 请求对象，用于获取用户ID
+        
+    Returns:
+        是否有访问权限
+    """
+    from bot_api_v1.app.models.meta_app import MetaApp
+    from bot_api_v1.app.models.meta_user import MetaUser
+    from bot_api_v1.app.models.meta_group import MetaGroup
+    from bot_api_v1.app.models.relations import RelUserGroup
+    from bot_api_v1.app.models.meta_path import MetaPath
+    from bot_api_v1.app.models.meta_access_policy import MetaAccessPolicy
+    from uuid import UUID
+    
+    trace_key = request_ctx.get_trace_key()
+    
+    try:
+        # 1. 查找匹配的API路径定义
+        path_stmt = select(MetaPath).where(
+            and_(
+                # 使用更精确的路径匹配
+                func.position(MetaPath.path_pattern in path) > 0,
+                or_(
+                    MetaPath.http_method == method,
+                    MetaPath.http_method == '*'
+                ),
+                MetaPath.status == 1
+            )
+        )
+        path_result = await db.execute(path_stmt)
+        path_obj = path_result.scalar_one_or_none()
+        
+        if not path_obj:
+            logger.warning(f"API路径未定义: {path}", extra={"request_id": trace_key})
+            # 未定义路径默认允许访问，可以根据安全策略调整为拒绝
+            return True
+            
+        # 如果路径不需要认证，直接允许访问
+        if path_obj.auth_type == 'none':
+            logger.debug(f"路径无需认证: {path}", extra={"request_id": trace_key})
+            return True
+            
+        # 2. 获取应用信息
+        app_stmt = select(MetaApp).where(
+            and_(
+                MetaApp.id == UUID(app_id),
+                MetaApp.status == 1
+            )
+        )
+        app_result = await db.execute(app_stmt)
+        app = app_result.scalar_one_or_none()
+        
+        if not app:
+            logger.warning(f"应用不存在或不活跃: {app_id}", extra={"request_id": trace_key})
+            return False
+        
+        # 3. 获取用户ID - 从请求头或应用关联中获取
+        user_id = None
+        if request:
+            user_id = request.headers.get("X-User-ID")
+            
+        # 如果没有从请求获取到用户ID，从应用关联获取
+        if not user_id and hasattr(app, 'user_id') and app.user_id:
+            user_id = str(app.user_id)
+        
+        # 验证用户存在且有效
+        if user_id:
+            user_stmt = select(MetaUser).where(
+                and_(
+                    MetaUser.id == UUID(user_id),
+                    MetaUser.status == 1
+                )
+            )
+            user_result = await db.execute(user_stmt)
+            user = user_result.scalar_one_or_none()
+
+            if user:
+                # 4. 查找用户所属的组
+                user_group_stmt = select(MetaGroup).join(
+                    RelUserGroup, 
+                    and_(
+                        RelUserGroup.group_id == MetaGroup.id,
+                        RelUserGroup.user_id == user.id,
+                        RelUserGroup.status == 1,
+                        or_(
+                            RelUserGroup.expired_at.is_(None),
+                            RelUserGroup.expired_at > datetime.now()
+                        )
+                    )
+                ).where(
+                    and_(
+                        MetaGroup.app_id == UUID(app_id),
+                        MetaGroup.status == 1
+                    )
+                )
+                
+                group_result = await db.execute(user_group_stmt)
+                user_groups = group_result.scalars().all()
+                
+                # 如果找到用户组，检查这些组的权限
+                if user_groups:
+                    # 收集组ID用于后续权限检查
+                    group_ids = [str(group.id) for group in user_groups]
+                    
+                    # 检查组是否有权限访问路径
+                    # 这里需要根据您的访问策略表结构进行适当调整
+                    now = datetime.now()
+                    policy_stmt = select(MetaAccessPolicy).where(
+                        and_(
+                            MetaAccessPolicy.status == 1,
+                            or_(
+                                MetaAccessPolicy.valid_from.is_(None),
+                                MetaAccessPolicy.valid_from <= now
+                            ),
+                            or_(
+                                MetaAccessPolicy.valid_until.is_(None),
+                                MetaAccessPolicy.valid_until >= now
+                            )
+                        )
+                    ).order_by(MetaAccessPolicy.priority.desc())
+                    
+                    policy_result = await db.execute(policy_stmt)
+                    policies = policy_result.scalars().all()
+                    
+                    # 检查每个策略是否适用
+                    for policy in policies:
+                        if policy.conditions:
+                            try:
+                                conditions = policy.conditions
+                                if isinstance(conditions, str):
+                                    conditions = json.loads(conditions)
+                                
+                                # 检查组条件
+                                if 'group_ids' in conditions and isinstance(conditions['group_ids'], list):
+                                    for group_id in group_ids:
+                                        if group_id in conditions['group_ids']:
+                                            # 检查路径条件
+                                            if 'paths' in conditions and path_obj.id in conditions['paths']:
+                                                if policy.effect == 'allow':
+                                                    logger.info(f"策略允许组访问: {policy.name}", 
+                                                               extra={"request_id": trace_key})
+                                                    return True
+                                                elif policy.effect == 'deny':
+                                                    logger.warning(f"策略拒绝组访问: {policy.name}", 
+                                                                  extra={"request_id": trace_key})
+                                                    return False
+                            except Exception as e:
+                                logger.error(f"解析组策略条件出错: {str(e)}", 
+                                           extra={"request_id": trace_key})
+        
+        # 5. 检查应用级别的权限
+        # 查找应用相关的组
+        app_group_stmt = select(MetaGroup).where(
+            and_(
+                MetaGroup.app_id == UUID(app_id),
+                MetaGroup.status == 1
+            )
+        )
+        app_group_result = await db.execute(app_group_stmt)
+        app_groups = app_group_result.scalars().all()
+        
+        if app_groups:
+            app_group_ids = [str(group.id) for group in app_groups]
+            
+            # 检查应用组是否有权限访问路径
+            now = datetime.now()
+            app_policy_stmt = select(MetaAccessPolicy).where(
+                and_(
+                    MetaAccessPolicy.status == 1,
+                    or_(
+                        MetaAccessPolicy.valid_from.is_(None),
+                        MetaAccessPolicy.valid_from <= now
+                    ),
+                    or_(
+                        MetaAccessPolicy.valid_until.is_(None),
+                        MetaAccessPolicy.valid_until >= now
+                    )
+                )
+            ).order_by(MetaAccessPolicy.priority.desc())
+            
+            app_policy_result = await db.execute(app_policy_stmt)
+            app_policies = app_policy_result.scalars().all()
+            
+            # 检查每个策略是否适用于应用
+            for policy in app_policies:
+                if policy.conditions:
+                    try:
+                        conditions = policy.conditions
+                        if isinstance(conditions, str):
+                            conditions = json.loads(conditions)
+                        
+                        # 检查应用条件
+                        if 'app_ids' in conditions and isinstance(conditions['app_ids'], list):
+                            if app_id in conditions['app_ids']:
+                                # 检查路径条件
+                                if 'paths' in conditions and str(path_obj.id) in conditions['paths']:
+                                    if policy.effect == 'allow':
+                                        logger.info(f"策略允许应用访问: {policy.name}", 
+                                                   extra={"request_id": trace_key})
+                                        return True
+                                    elif policy.effect == 'deny':
+                                        logger.warning(f"策略拒绝应用访问: {policy.name}", 
+                                                      extra={"request_id": trace_key})
+                                        return False
+                        
+                        # 检查应用组条件
+                        if 'group_ids' in conditions and isinstance(conditions['group_ids'], list):
+                            for group_id in app_group_ids:
+                                if group_id in conditions['group_ids']:
+                                    # 检查路径条件
+                                    if 'paths' in conditions and str(path_obj.id) in conditions['paths']:
+                                        if policy.effect == 'allow':
+                                            logger.info(f"策略允许应用组访问: {policy.name}", 
+                                                       extra={"request_id": trace_key})
+                                            return True
+                                        elif policy.effect == 'deny':
+                                            logger.warning(f"策略拒绝应用组访问: {policy.name}", 
+                                                          extra={"request_id": trace_key})
+                                            return False
+                    except Exception as e:
+                        logger.error(f"解析应用策略条件出错: {str(e)}", 
+                                   extra={"request_id": trace_key})
+        
+        # 6. 检查通用策略（不针对特定组或应用）
+        now = datetime.now()
+        general_policy_stmt = select(MetaAccessPolicy).where(
+            and_(
+                MetaAccessPolicy.status == 1,
+                or_(
+                    MetaAccessPolicy.valid_from.is_(None),
+                    MetaAccessPolicy.valid_from <= now
+                ),
+                or_(
+                    MetaAccessPolicy.valid_until.is_(None),
+                    MetaAccessPolicy.valid_until >= now
+                )
+            )
+        ).order_by(MetaAccessPolicy.priority.desc())
+        
+        general_policy_result = await db.execute(general_policy_stmt)
+        general_policies = general_policy_result.scalars().all()
+        
+        # 检查每个通用策略的条件
+        for policy in general_policies:
+            if policy.conditions:
+                try:
+                    conditions = policy.conditions
+                    if isinstance(conditions, str):
+                        conditions = json.loads(conditions)
+                    
+                    # 检查是否有通用路径条件（不指定特定应用或组）
+                    if 'paths' in conditions and isinstance(conditions['paths'], list):
+                        if str(path_obj.id) in conditions['paths'] or path in conditions['paths']:
+                            if policy.effect == 'allow':
+                                logger.info(f"通用策略允许访问: {policy.name}", 
+                                           extra={"request_id": trace_key})
+                                return True
+                            elif policy.effect == 'deny':
+                                logger.warning(f"通用策略拒绝访问: {policy.name}", 
+                                              extra={"request_id": trace_key})
+                                return False
+                except Exception as e:
+                    logger.error(f"解析通用策略条件出错: {str(e)}", 
+                               extra={"request_id": trace_key})
+        
+        # 如果没有明确策略，采用默认策略
+        # 安全起见，建议默认拒绝
+        logger.warning(f"无明确策略，默认拒绝访问: {path}", extra={"request_id": trace_key})
+        return False
+        
+    except Exception as e:
+        logger.error(f"检查权限时出错: {str(e)}", exc_info=True, extra={"request_id": trace_key})
+        # 出错时保守处理，拒绝访问
+        return False
+
+
+def require_signature(sign_type: str = None, exempt: bool = False, require_permission: bool = True):
     """
     验签装饰器，用于API路由函数
 
     Args:
         sign_type: 指定验签类型，为None时使用应用默认配置
         exempt: 是否豁免验签，设为True时跳过验签
+        require_permission: 是否检查权限，设为False时跳过权限检查
 
     Returns:
         装饰器函数
@@ -549,9 +836,6 @@ def require_signature(sign_type: str = None, exempt: bool = False):
                         "通过函数创建数据库会话", extra={"request_id": trace_key}
                     )
                     try:
-                        # db_func = get_db()
-                        # db = await db_func.__anext__()
-                        # async with get_db() as db:
                         async for db in get_db():
                             logger.debug(
                                 "成功创建数据库会话", extra={"request_id": trace_key}
@@ -566,9 +850,36 @@ def require_signature(sign_type: str = None, exempt: bool = False):
 
                 # 获取验签器
                 logger.debug(
-                    f"获取验签器1: app_id={app_id}, sign_type={sign_type}",
+                    f"获取验签器: app_id={app_id}, sign_type={sign_type}",
                     extra={"request_id": trace_key},
                 )
+
+
+
+                # 添加权限检查
+                if require_permission:
+                    # 获取当前API路径
+                    current_path = request.url.path
+                    method = request.method
+                    
+                    logger.debug(f"检查权限: app_id={app_id}, path={current_path}, method={method}", 
+                              extra={"request_id": trace_key})
+                    
+                    try:
+                        has_permission = await check_app_permission(app_id, current_path, method, db ,request)
+                        if not has_permission:
+                            logger.warning(f"应用无访问权限: app_id={app_id}, path={current_path}", 
+                                        extra={"request_id": trace_key})
+                            raise HTTPException(status_code=403, detail="没有权限访问此API")
+                        
+                        logger.debug(f"权限检查通过", extra={"request_id": trace_key})
+                    except Exception as e:
+                        if isinstance(e, HTTPException):
+                            raise
+                        logger.error(f"权限检查错误: {str(e)}", extra={"request_id": trace_key})
+                        raise HTTPException(status_code=500, detail=f"权限检查过程中发生错误: {str(e)}")
+
+
                 try:
                     verifier = await SignatureVerifier.get_verifier(
                         app_id, sign_type, db
@@ -617,6 +928,8 @@ def require_signature(sign_type: str = None, exempt: bool = False):
 
                 # 将app_id存入请求状态，供后续处理使用
                 request.state.app_id = app_id
+                
+                
 
                 # 执行原始处理函数
                 return await func(*args, **kwargs)
@@ -640,3 +953,123 @@ def require_signature(sign_type: str = None, exempt: bool = False):
         return wrapper
 
     return decorator
+
+
+
+
+@SignatureVerifier.register("feishu_sheet")
+class FeishuSheetVerifier(SignatureVerifier):
+    """飞书电子表格验签器"""
+    
+    async def verify(self, request: Request) -> bool:
+        """
+        验证飞书API请求的签名
+        
+        步骤:
+        1. 从请求头获取飞书签名Token
+        2. 使用飞书的公钥验证签名
+        
+        Args:
+            request: FastAPI请求对象
+        
+        Returns:
+            验证是否通过
+        """
+        from bot_api_v1.app.security.feishu_sheet_signature import verify_feishu_token, config as feishu_config
+        
+        trace_key = request_ctx.get_trace_key()
+        logger.debug("使用飞书电子表格验证签名", extra={"request_id": trace_key})
+        
+        # 获取飞书签名Token
+        token = request.headers.get("X-Lark-Signature")
+        if not token:
+            token = request.headers.get("X-Feishu-Signature")  # 兼容旧版头部
+            
+        if not token:
+            logger.warning("缺少飞书签名Token", extra={"request_id": trace_key})
+            raise ValueError("缺少飞书签名Token")
+            
+        logger.debug(f"收到飞书签名Token: {token[:20] if len(token) > 20 else token}...", 
+                   extra={"request_id": trace_key})
+        
+        try:
+            # 从应用配置中获取飞书相关设置
+            feishu_settings = {}
+            
+            # 尝试从sign_config解析特定配置
+            if "sign_config" in self.app_info and self.app_info["sign_config"]:
+                try:
+                    sign_config = self.app_info["sign_config"]
+                    if isinstance(sign_config, str):
+                        sign_config = json.loads(sign_config)
+                    
+                    # 获取飞书特定配置
+                    if "feishu" in sign_config and isinstance(sign_config["feishu"], dict):
+                        feishu_settings = sign_config["feishu"]
+                except Exception as e:
+                    logger.error(f"解析飞书配置失败: {str(e)}", 
+                              extra={"request_id": trace_key}, exc_info=True)
+            
+            # 获取公钥 - 优先级: sign_config > 应用特定公钥 > 默认公钥
+            public_key = None
+            if "public_key" in feishu_settings:
+                public_key = feishu_settings["public_key"]
+            elif "feishu_public_key" in self.app_info and self.app_info["feishu_public_key"]:
+                public_key = self.app_info["feishu_public_key"]
+            else:
+                public_key = feishu_config.DEFAULT_PUBLIC_KEY
+            
+            # 获取其他配置参数
+            debug_mode = feishu_settings.get("debug", False)
+            timeout = feishu_settings.get("timeout", feishu_config.VERIFY_TIMEOUT)
+            
+            # 读取请求体
+            body = await request.body()
+            body_text = body.decode("utf-8")
+            
+            # 记录请求信息以便调试
+            if debug_mode:
+                # 限制日志大小，避免日志过大
+                max_log_size = 500  # 最大日志长度
+                if len(body_text) > max_log_size:
+                    logger.debug(f"请求体(前{max_log_size}字符): {body_text[:max_log_size]}...", 
+                               extra={"request_id": trace_key})
+                else:
+                    logger.debug(f"请求体: {body_text}", extra={"request_id": trace_key})
+            
+            # 验证飞书签名
+            is_valid, decoded_data = verify_feishu_token(
+                token, 
+                public_key=public_key,
+                debug=debug_mode, 
+                timeout=timeout
+            )
+            
+            if is_valid:
+                # 将解码后的数据保存到请求状态中，便于后续处理
+                request.state.feishu_data = decoded_data
+                logger.info(f"飞书签名验证通过", extra={"request_id": trace_key})
+                
+                # 记录解码的数据用于调试
+                if debug_mode and decoded_data:
+                    data_str = (
+                        str(decoded_data) if not isinstance(decoded_data, dict) 
+                        else json.dumps(decoded_data, ensure_ascii=False)
+                    )
+                    if len(data_str) > max_log_size:
+                        logger.debug(f"解码数据(前{max_log_size}字符): {data_str[:max_log_size]}...", 
+                                   extra={"request_id": trace_key})
+                    else:
+                        logger.debug(f"解码数据: {data_str}", extra={"request_id": trace_key})
+            else:
+                logger.warning(f"飞书签名验证失败", extra={"request_id": trace_key})
+                
+            return is_valid
+            
+        except Exception as e:
+            logger.error(
+                f"飞书验签过程出错: {str(e)}",
+                extra={"request_id": trace_key},
+                exc_info=True,
+            )
+            raise

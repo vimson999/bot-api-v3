@@ -120,7 +120,7 @@ def cache_result(expire_seconds=86400, prefix="script_cache", skip_args=None):
             
             # 缓存未命中或强制刷新，执行原函数
             logger.info(
-                f"缓存未命中，执行方法: {method_name}",
+                f"缓存{full_cache_key}未命中，执行方法: {method_name}",
                 extra={"request_id": trace_key}
             )
             

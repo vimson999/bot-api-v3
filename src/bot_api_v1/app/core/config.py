@@ -6,6 +6,8 @@ from typing import Optional, List, Dict, Any, Union
 import json
 from functools import lru_cache
 import secrets
+from pathlib import Path
+
 
 class Settings(BaseSettings):
     # 基本应用配置
@@ -58,6 +60,7 @@ class Settings(BaseSettings):
     LOG_TO_STDOUT: bool = os.getenv("LOG_TO_STDOUT", "true").lower() == "true"
     LOG_TO_FILE: bool = os.getenv("LOG_TO_FILE", "true").lower() == "true"
     LOG_FILE_PATH: Optional[str] = os.getenv("LOG_FILE_PATH")
+
     
     # 性能和限流设置
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "100"))

@@ -24,24 +24,16 @@ async def log_middleware(request: Request, call_next):
     trace_key = str(uuid.uuid4())
     start_time = time.time()
 
-    # 初始化请求上下文 - 添加这部分
-    request_ctx.set_context({
-        'trace_key': trace_key,
-        'method_name': f"{request.method}:{request.url.path}",
-        'source': request.headers.get('x-source', 'api'),
-        'app_id': request.headers.get('x-app-id'),
-        'user_uuid': request.headers.get('x-user-uuid'),
-        'user_nickname': request.headers.get('x-user-nickname'),
-        'ip_address': request.client.host if request.client else None,
-        'request_time': datetime.now().isoformat(),
-    })
-    
     # 安全获取请求头
     try:
         headers_dict = dict(request.headers.items())
-        # 移除可能的敏感信息
-        sanitized_headers = sanitize_headers(headers_dict)
+        # 移除可能的敏感信息（如果有sanitize_headers函数）
+        if 'sanitize_headers' in globals():
+            sanitized_headers = sanitize_headers(headers_dict)
+        else:
+            sanitized_headers = {k: v for k, v in headers_dict.items() if not k.lower().startswith('authorization')}
     except Exception:
+        headers_dict = {}
         sanitized_headers = {"info": "Unable to parse headers"}
     
     # 尝试获取客户端IP
@@ -50,11 +42,36 @@ async def log_middleware(request: Request, call_next):
     # 提取请求路径作为方法名
     method_name = f"{request.method}:{request.url.path}"
     
-    # 提取用户信息
-    app_id = headers_dict.get('x-app-id')
-    source_info = headers_dict.get('x-source')  # 默认为api
-    user_uuid = headers_dict.get('x-user-uuid')
-    user_nickName = headers_dict.get('x-user-nickname')
+    # 提取用户信息 - 保留原始变量名
+    app_id = headers_dict.get('x-app-id', headers_dict.get('X-App-Id'))
+    source_info = headers_dict.get('x-source', headers_dict.get('X-Source', 'api'))
+    user_uuid = headers_dict.get('x-user-uuid', headers_dict.get('X-User-Uuid'))
+    user_nickName = headers_dict.get('x-user-nickname', headers_dict.get('X-User-Nickname'))
+    
+    # 解决用户昵称的中文乱码问题
+    try:
+        if isinstance(user_nickName, bytes):
+            user_nickName = user_nickName.decode('utf-8')
+        elif user_nickName and isinstance(user_nickName, str):
+            # 尝试解决乱码
+            user_nickName = user_nickName.encode('latin1').decode('utf-8')
+    except Exception:
+        user_nickName = '-'
+    
+    # 构建上下文数据
+    context_data = {
+        'trace_key': trace_key,
+        'method_name': method_name,
+        'source': source_info,
+        'app_id': app_id,
+        'user_id': user_uuid,
+        'user_name': user_nickName,
+        'ip_address': client_ip,
+        'request_time': datetime.now().isoformat(),
+    }
+    
+    # 设置上下文
+    request_ctx.set_context(context_data)
     
     # 尝试识别路由处理函数并获取tollgate配置
     route_handler = None
@@ -155,11 +172,9 @@ async def log_middleware(request: Request, call_next):
     except Exception as e:
         logger.error(f"Failed to log request to database: {str(e)}", exc_info=True)
     
-    # 记录请求信息到文本日志
+    # # 记录请求信息到文本日志
     logger.info(
-        "Request | Method=%s Path=%s",
-        request.method,
-        request.url.path,
+        f"Request | Method={request.method} Path={request.url.path}",
         extra={
             "request_id": trace_key,
             "headers": sanitized_headers
@@ -215,12 +230,10 @@ async def log_middleware(request: Request, call_next):
         
         # 计算处理时间
         process_time = (time.time() - start_time) * 1000
-        
+
         # 记录响应信息到文本日志
         logger.info(
-            "Response | Status=%d Duration=%.2fms",
-            response.status_code,
-            process_time,
+            "Response | Status=%d Duration=%.2fms" % (response.status_code, process_time),
             extra={
                 "request_id": trace_key,
                 "headers": sanitized_response_headers
@@ -370,3 +383,4 @@ async def wait_for_log_tasks():
         logger.info(f"Waiting for {len(_TASK_REGISTRY)} log tasks to complete...")
         await asyncio.gather(*_TASK_REGISTRY, return_exceptions=True)
         logger.info("All log tasks completed.")
+
