@@ -44,3 +44,6 @@ limit 100;
 
 
 hello
+
+-- init.sql
+well
