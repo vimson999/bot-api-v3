@@ -39,11 +39,16 @@ limit 100;
 
 
 
+ git push bot-api-v3-github master:main;   
+
+(venv) v9@v9deMacBook-Pro bot-api-v1 % uvicorn bot_api_v1.app.core.app:create_app --reload --host 0.0.0.0 --port 8000
 
 
 
-
-hello
-
--- init.sql
-well
+curl -X POST "http://localhost:8000/api/script/transcribe" \
+  -H "Content-Type: application/json" \
+  -H "x-source: feishu-sheet" \
+  -H "x-app-id: sheet-api" \
+  -H "x-user-uuid: user-123456" \
+  -H "x-user-nickname: 晓山" \
+  -d '{"url": "https://www.youtube.com/shorts/O8GAUEDR0Is"}'
