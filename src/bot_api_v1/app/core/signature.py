@@ -975,7 +975,7 @@ class FeishuSheetVerifier(SignatureVerifier):
         Returns:
             验证是否通过
         """
-        from bot_api_v1.app.security.feishu_sheet_signature import verify_feishu_token, config as feishu_config
+        from bot_api_v1.app.security.signature.providers.feishu_sheet import verify_feishu_token, config as feishu_config
         
         trace_key = request_ctx.get_trace_key()
         logger.debug("使用飞书电子表格验证签名", extra={"request_id": trace_key})

@@ -10,7 +10,7 @@ from sqlalchemy import CHAR, VARCHAR, CheckConstraint, Text
 from sqlalchemy.dialects.postgresql import TEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
-from ..security.crypto import decrypt_data, encrypt_data
+from bot_api_v1.app.security.crypto.base import decrypt_data, encrypt_data
 from .base import Base
 
 

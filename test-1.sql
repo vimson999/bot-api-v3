@@ -137,3 +137,16 @@ Copyapp/constants/
 ├── auth.py        # 认证相关常量
 ├── log_levels.py  # 日志级别
 └── system.py      # 系统常量
+
+
+app/security/
+├── crypto/         # 通用加密
+│   └── base.py
+├── signature/      # 签名验证
+│   ├── base.py
+│   └── providers/
+│       ├── hmac.py
+│       ├── rsa.py
+│       └── feishu.py
+└── encryption/     # 数据加解密
+    └── symmetric.py

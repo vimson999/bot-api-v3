@@ -11,7 +11,7 @@ import random
 import string
 import concurrent.futures
 import json
-from bot_api_v1.app.security.feishu_sheet_signature import verify_feishu_token, rsa_verify_sign
+from bot_api_v1.app.security.signature.providers.feishu_sheet import verify_feishu_token, rsa_verify_sign
 
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx

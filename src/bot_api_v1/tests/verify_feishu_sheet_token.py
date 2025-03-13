@@ -21,11 +21,11 @@ from bot_api_v1.app.core.logger import logger
 # 确保能够导入飞书签名验证模块
 try:
     # 优先尝试从项目包导入
-    from bot_api_v1.app.security.feishu_sheet_signature import verify_feishu_token, rsa_verify_sign
+    from bot_api_v1.app.security.signature.providers.feishu_sheet import verify_feishu_token, rsa_verify_sign
 except ImportError:
     try:
         # 尝试从本地目录导入
-        from bot_api_v1.app.security.feishu_sheet_signature import verify_feishu_token, rsa_verify_sign
+        from bot_api_v1.app.security.signature.providers.feishu_sheet import verify_feishu_token, rsa_verify_sign
     except ImportError:
         sys.stderr.write("错误: 无法导入飞书签名验证模块。请确保该模块可用。\n")
         sys.exit(1)
