@@ -128,9 +128,24 @@ class LoggerInterface:
         self._logger.bind(**extra).exception(msg)
     
     
+    # def gigg(self, level, msg, *args, **kwargs):
+    #     """记录自定义级别日志"""
+    #     extra = self._get_extra(kwargs)
+
+    #     current_ctx = request_ctx.get_context()
+
+    #     base_tollgate = current_ctx.get('base_tollgate', '-')
+    #     current_tollgate = current_ctx.get('current_tollgate', '-')
+    #     extra['tollgate'] = f'{base_tollgate}-{current_tollgate}'
+
+    #     self._logger.bind(**extra).info(msg)
+
     def _get_extra(self, kwargs):
         """从kwargs中提取extra信息并增加请求上下文信息"""
         extra = kwargs.get('extra', {})
+        # extra = copy.deepcopy(kwargs.get('extra', {}))  # 深度拷贝避免引用污染
+        # current_ctx = copy.deepcopy(request_ctx.get_context())  # 深度拷贝上下文
+
         
         # 获取最新的上下文数据
         current_ctx = request_ctx.get_context()

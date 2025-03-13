@@ -22,7 +22,7 @@ from bot_api_v1.app.core.logger import logger
 # 导入服务日志装饰器
 from bot_api_v1.app.core.service_decorators import log_service_call
 from bot_api_v1.app.core.context import request_ctx
-
+from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
 
 class AudioDownloadError(Exception):
     """音频下载过程中出现的错误"""
@@ -97,6 +97,7 @@ class ScriptService:
     
     @log_service_call(method_type="script", tollgate="10-2")
     @cache_result(expire_seconds=3600)
+    @gate_keeper()
     async def download_audio(self, url: str) -> Tuple[str, str]:
         """
         下载音频并返回文件路径和标题
@@ -170,6 +171,7 @@ class ScriptService:
     
     @log_service_call(method_type="script", tollgate="10-3")
     @cache_result(expire_seconds=3600)
+    @gate_keeper()
     async def transcribe_audio(self, audio_path: str) -> str:
         """
         将音频转写为文本

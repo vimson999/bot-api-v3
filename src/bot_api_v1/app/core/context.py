@@ -102,5 +102,10 @@ class RequestContext:
         return _request_ctx_var.get().get("current_tollgate", "-")
 
 
+    @staticmethod
+    def get_whole_tollgate() -> str:
+        """获取用户名称"""
+        return f'{_request_ctx_var.get().get("base_tollgate", "-")}-{_request_ctx_var.get().get("current_tollgate", "-")}'
+
 # 默认导出的请求上下文实例
 request_ctx = RequestContext()

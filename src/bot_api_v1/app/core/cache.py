@@ -73,6 +73,7 @@ def cache_result(expire_seconds=86400, prefix="script_cache", skip_args=None):
             from bot_api_v1.app.core.logger import logger
             
             trace_key = request_ctx.get_trace_key()
+            # whole_tollgate = request_ctx.get_whole_tollgate()
             method_name = func.__qualname__
             
             # 检查是否强制刷新缓存
@@ -119,10 +120,24 @@ def cache_result(expire_seconds=86400, prefix="script_cache", skip_args=None):
                     return cached_data['result']
             
             # 缓存未命中或强制刷新，执行原函数
+            # logger.gigg(
+            #     f"from-gigg缓存{full_cache_key}未命中，执行方法: {method_name}",
+            #     extra={"request_id": trace_key}
+            # )
+
             logger.info(
-                f"缓存{full_cache_key}未命中，执行方法: {method_name}",
+                f"ori-缓存{full_cache_key}未命中，执行方法: {method_name}",
                 extra={"request_id": trace_key}
             )
+
+
+            # logger.info(
+            #     f"from whole_tollgate 缓存{full_cache_key}未命中，执行方法: {method_name}",
+            #     extra={
+            #         "request_id": trace_key,
+            #         "tollgate": whole_tollgate
+            #     }
+            # )
             
             start_time = time.time()
             result = await func(*args, **kwargs)

@@ -282,27 +282,7 @@ async def log_response(response: Response, request: Request, trace_key: str,
     method_name = context_data.get('method_name')
     client_ip = context_data.get('ip_address')
     
-    # 记录详细响应日志到文本
-    logger.debug(
-        "Response Content | Status=%d Size=%d\n%s",
-        response.status_code,
-        len(log_content),
-        log_content[:500],  # 只记录前500个字符
-        extra={
-            "request_id": trace_key,
-            "headers": sanitized_response_headers
-        }
-    )
-    
-    # 记录响应信息到文本日志
-    logger.info(
-        "Response | Status=%d Duration=%.2fms" % (response.status_code, process_time),
-        extra={
-            "request_id": trace_key,
-            "headers": sanitized_response_headers
-        }
-    )
-    
+
     # 更新响应tollgate - 使用base-base表示流程结束
     base_tollgate = context_data.get('base_tollgate')
     
@@ -315,6 +295,29 @@ async def log_response(response: Response, request: Request, trace_key: str,
         response_tollgate = f'{base_gate}-{base_gate}'  # 使用base-base表示完成
     else:
         response_tollgate = "10-10"  # 默认完成状态
+
+    # 记录详细响应日志到文本
+    logger.debug(
+        "Response Content | Status=%d Size=%d\n%s",
+        response.status_code,
+        len(log_content),
+        log_content[:500],  # 只记录前500个字符
+        extra={
+            "request_id": trace_key,
+            "headers": sanitized_response_headers,
+            "tollgate": response_tollgate
+        }
+    )
+    
+    # 记录响应信息到文本日志
+    logger.info(
+        "Response | Status=%d Duration=%.2fms" % (response.status_code, process_time),
+        extra={
+            "request_id": trace_key,
+            "headers": sanitized_response_headers,
+            "tollgate": response_tollgate
+        }
+    )
     
     # 构造备注信息
     title = tollgate_config.get("title", "") if tollgate_config else ""

@@ -120,8 +120,8 @@ def log_service_call(
             if base_tollgate and current_tollgate:
                 try:
                     new_tollgate = str(int(current_tollgate) + 1)
-                    ctx['current_tollgate'] = new_tollgate
-                    request_ctx.set_context(ctx)
+                    # ctx['current_tollgate'] = new_tollgate
+                    # request_ctx.set_context(ctx)
                     
                     # 使用新的tollgate值
                     if success:

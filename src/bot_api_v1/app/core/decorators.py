@@ -48,9 +48,10 @@ class TollgateConfig:
         async def wrapper(*args, **kwargs):
             # 在执行函数前更新请求上下文
             context = request_ctx.get_context()
+            original_source = context.get('source')  # 保存原始source值
             context['base_tollgate'] = self.base_tollgate
             context['current_tollgate'] = self.current_tollgate
-            if self.plat:
+            if self.plat and not original_source:  # 只在没有原始source值时使用plat
                 context['source'] = self.plat
             request_ctx.set_context(context)
             
