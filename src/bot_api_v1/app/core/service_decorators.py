@@ -82,6 +82,9 @@ def log_service_call(
             trace_key = context['trace_key']
             qualified_name = context['qualified_name']
             params = context['params']
+
+            # logger.info(f"log Service log_execution_result call: {qualified_name}")  
+
             
             # 记录文本日志
             if success:
@@ -114,18 +117,18 @@ def log_service_call(
             # 从请求上下文获取tollgate信息
             ctx = request_ctx.get_context()
             base_tollgate = ctx.get('base_tollgate', tollgate.split('-')[0] if '-' in tollgate else '20')
-            current_tollgate = ctx.get('current_tollgate', '1')
+            current_tollgate = ctx.get('db_current_tollgate', '2')
             
             # 如果找到base_tollgate和current_tollgate，递增current_tollgate
             if base_tollgate and current_tollgate:
                 try:
                     new_tollgate = str(int(current_tollgate) + 1)
-                    # ctx['current_tollgate'] = new_tollgate
-                    # request_ctx.set_context(ctx)
+                    ctx['db_current_tollgate'] = new_tollgate
+                    request_ctx.set_context(ctx)
                     
                     # 使用新的tollgate值
                     if success:
-                        log_tollgate = f"{base_tollgate}-{new_tollgate}"
+                        log_tollgate = f"{base_tollgate}-{current_tollgate}"
                     else:
                         log_tollgate = f"{base_tollgate}-9"
                 except (ValueError, TypeError):
@@ -164,6 +167,8 @@ def log_service_call(
         
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
+            # logger.info(f"log Service async_wrapper call: {func.__qualname__}")
+
             """异步函数的包装器"""
             start_time = time.time()
             
@@ -197,6 +202,7 @@ def log_service_call(
         
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
+            # logger.info(f"log Service sync_wrapper call: {func.__qualname__}")  
             """同步函数的包装器"""
             start_time = time.time()
             

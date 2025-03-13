@@ -31,6 +31,8 @@ def gate_keeper(
     def decorator(func: Callable) -> Callable:
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            # logger.info(f"Gate Keeper start : base_tollgate={base_tollgate}, strict_mode={strict_mode}")
+
             try:
                 ctx = request_ctx.get_context()
 

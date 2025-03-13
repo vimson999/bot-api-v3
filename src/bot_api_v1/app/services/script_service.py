@@ -95,9 +95,9 @@ class ScriptService:
             logger.error(f"Whisper模型加载失败: {str(e)}", extra={"request_id": trace_key})
             raise AudioTranscriptionError(f"模型加载失败: {str(e)}") from e
     
+    @gate_keeper()
     @log_service_call(method_type="script", tollgate="10-2")
     @cache_result(expire_seconds=3600)
-    @gate_keeper()
     async def download_audio(self, url: str) -> Tuple[str, str]:
         """
         下载音频并返回文件路径和标题
@@ -114,8 +114,10 @@ class ScriptService:
         # 获取trace_key
         trace_key = request_ctx.get_trace_key()
         
+        # logger.info(f"download_audio start: {url}", extra={"request_id": trace_key})
+
         # 使用trace_key记录日志
-        logger.info(f"开始下载音频: {url}", extra={"request_id": trace_key})
+        logger.info(f"download_audio-开始下载音频: {url}", extra={"request_id": trace_key})
         
         # 创建唯一的临时目录
         download_dir = os.path.join(self.temp_dir, f"audio_{int(time.time())}")
@@ -169,9 +171,9 @@ class ScriptService:
             self._cleanup_dir(download_dir, trace_key)
             raise AudioDownloadError(error_msg) from e
     
+    @gate_keeper()
     @log_service_call(method_type="script", tollgate="10-3")
     @cache_result(expire_seconds=3600)
-    @gate_keeper()
     async def transcribe_audio(self, audio_path: str) -> str:
         """
         将音频转写为文本
@@ -193,7 +195,7 @@ class ScriptService:
         if not os.path.exists(audio_path):
             raise AudioTranscriptionError(f"音频文件不存在: {audio_path}")
         
-        logger.info(f"开始转写音频: {audio_path}", extra={"request_id": trace_key})
+        logger.info(f"transcribe_audio-开始转写音频: {audio_path}", extra={"request_id": trace_key})
         start_time = time.time()
         
         # 加载模型

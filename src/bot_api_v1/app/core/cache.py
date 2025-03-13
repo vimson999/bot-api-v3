@@ -72,6 +72,9 @@ def cache_result(expire_seconds=86400, prefix="script_cache", skip_args=None):
             from bot_api_v1.app.core.context import request_ctx
             from bot_api_v1.app.core.logger import logger
             
+            # logger.info(f"cache_result start : expire_seconds={expire_seconds}, prefix={prefix}, skip_args={skip_args}")
+
+            
             trace_key = request_ctx.get_trace_key()
             # whole_tollgate = request_ctx.get_whole_tollgate()
             method_name = func.__qualname__
@@ -126,7 +129,7 @@ def cache_result(expire_seconds=86400, prefix="script_cache", skip_args=None):
             # )
 
             logger.info(
-                f"ori-缓存{full_cache_key}未命中，执行方法: {method_name}",
+                f"缓存{full_cache_key}未命中，执行方法: {method_name}",
                 extra={"request_id": trace_key}
             )
 
