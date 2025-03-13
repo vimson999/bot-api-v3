@@ -82,47 +82,58 @@ curl -X POST "http://localhost:8000/api/script/transcribe" \
   }
 
 
+2. 安全模块组织
+
+app/security目录下crypto.py和feishu_sheet_signature.py耦合度较高
+建议按功能拆分：
+Copyapp/security/
+├── crypto/         # 通用加密
+│   └── base.py
+├── signature/      # 签名验证
+│   ├── base.py
+│   └── providers/
+│       ├── hmac.py
+│       ├── rsa.py
+│       └── feishu.py
+└── encryption/     # 数据加解密
+    └── symmetric.py
 
 
-作为资深研发测试专家，我对项目结构和文件命名有几点观察：
-不合理的文件命名或位置
+3. 配置管理
 
-一致性问题：
-
-app/core/service_decorators.py 与其他装饰器文件分开，应该与 app/utils/decorators/gate_keeper.py 放在同一目录下
-app/middlewares/logging_middleware.py 名称使用了下划线，而项目其他地方更多使用驼峰或纯小写命名
-
-
-位置不合理：
-
-app/api/system.py 单独存在，而其他API路由都在 app/api/routers 目录下，应该移到routers下保持一致
-app/services/script_service.py 包含具体业务逻辑，但项目没有清晰区分业务服务层
+app/core/config.py配置项过于庞大
+建议拆分为：
+Copyapp/core/config/
+├── base.py        # 基础配置
+├── database.py    # 数据库配置
+├── logging.py     # 日志配置
+└── security.py    # 安全配置
 
 
-命名混乱：
+4. 测试组织
 
-app/db/session.py 和 app/core/dependencies.py 都定义了获取数据库会话的函数，导致功能重复
-app/core/app.py 命名过于宽泛，不能清楚表达其作为应用程序入口点的功能
-
-
-结构问题：
-
-app/security 目录下的加密相关文件与安全签名验证混在一起，可以进一步分类
-app/tasks/base.py 承担了太多职责，应该拆分为更小的模块
-
-
-缺失的组织：
-
-没有专门的 exceptions 目录来管理自定义异常类
-没有统一的 constants 或 config 目录来管理常量和配置
+tests目录测试文件组织不够清晰
+建议按模块对应测试：
+Copytests/
+├── unit/
+│   ├── test_security.py
+│   ├── test_services.py
+│   └── test_models.py
+├── integration/
+│   └── test_api_workflows.py
+└── performance/
+    └── test_signature_performance.py
 
 
-测试文件组织：
+5. 异常处理
 
-tests 目录下文件组织不完善，没有按照应用结构划分测试类别
-测试文件命名不一致，有些以 test_ 开头，有些没有
+缺少统一的异常基类和异常管理
+建议增加 app/exceptions/ 目录，定义通用异常类型
 
+6. 常量管理
 
-脚本文件混杂：
-
-scripts 目录下的文件混合了多种不同用途的脚本，应该按功能分类
+建议增加 app/constants/ 目录，集中管理常量
+Copyapp/constants/
+├── auth.py        # 认证相关常量
+├── log_levels.py  # 日志级别
+└── system.py      # 系统常量

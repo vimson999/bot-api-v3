@@ -10,7 +10,7 @@ from starlette.routing import Match
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.services.log_service import LogService
 from bot_api_v1.app.tasks.base import register_task, TASK_TYPE_LOG
-from bot_api_v1.app.core.decorators import get_tollgate_config
+from bot_api_v1.app.utils.decorators.tollgate import get_tollgate_config
 from bot_api_v1.app.core.context import request_ctx
 from datetime import datetime
 
