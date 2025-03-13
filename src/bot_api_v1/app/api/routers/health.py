@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends,Request
 from bot_api_v1.app.core.schemas import BaseResponse
-from bot_api_v1.app.core.dependencies import get_db
+from bot_api_v1.app.db.session import get_db
 from sqlalchemy.orm import Session
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.decorators import TollgateConfig

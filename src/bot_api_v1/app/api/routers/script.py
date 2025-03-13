@@ -12,7 +12,7 @@ from bot_api_v1.app.core.decorators import TollgateConfig
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.schemas import BaseResponse
 from bot_api_v1.app.db.session import get_db
-from bot_api_v1.app.services.script_service import ScriptService, AudioDownloadError, AudioTranscriptionError
+from bot_api_v1.app.services.business.script_service import ScriptService, AudioDownloadError, AudioTranscriptionError
 from bot_api_v1.app.core.signature import require_signature
 
 router = APIRouter(prefix="/script", tags=["脚本服务"])

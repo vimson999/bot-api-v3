@@ -20,7 +20,7 @@ from bot_api_v1.app.core.cache import cache_result
 # 导入项目日志模块
 from bot_api_v1.app.core.logger import logger
 # 导入服务日志装饰器
-from bot_api_v1.app.core.service_decorators import log_service_call
+from bot_api_v1.app.utils.decorators.log_service_call import log_service_call
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
 

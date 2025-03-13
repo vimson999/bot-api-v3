@@ -11,7 +11,6 @@ from bot_api_v1.app.middlewares.logging_middleware import log_middleware
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.exceptions import http_exception_handler, CustomException
 from bot_api_v1.app.api.main import router as api_router
-from bot_api_v1.app.api.system import router as system_router
 from bot_api_v1.app.tasks.base import wait_for_tasks, wait_for_log_tasks, TASK_TYPE_LOG
 from bot_api_v1.app.db.init_db import init_db, wait_for_db
 from bot_api_v1.app.core.config import settings
@@ -54,7 +53,6 @@ def create_app():
 
     # 注册路由
     app.include_router(api_router, prefix=settings.API_PREFIX)
-    app.include_router(system_router, prefix="/system", tags=["system"])
     app.include_router(script.router, prefix="/script")
 
     # 注册异常处理器
