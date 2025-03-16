@@ -1,7 +1,3 @@
-
-# bot_api_v1/app/db/session.py
-# bot_api_v1/app/db/session.py
-# 在导入部分添加
 import sqlalchemy
 
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
@@ -12,6 +8,7 @@ import contextlib
 import logging
 from bot_api_v1.app.core.config import settings
 import time
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -80,26 +77,18 @@ async_session_maker = sessionmaker(
     autoflush=False
 )
 
-@contextlib.asynccontextmanager
 async def get_db():
-    """提供异步数据库会话的上下文管理器"""
-    session = async_session_maker()
-    start_time = time.time()
-    try:
-        yield session
-        await session.commit()
-    except Exception as e:
-        await session.rollback()
-        logger.exception(f"Database session error: {str(e)}")
-        raise
-    finally:
-        await session.close()
-        if settings.DB_TRACE_SESSIONS:
-            duration = time.time() - start_time
-            logger.debug(f"Database session lasted {duration:.4f}s")
-
-
-
+    """异步数据库会话生成器"""
+    async with async_session_maker() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception as e:
+            await session.rollback()
+            logger.exception(f"Database session error: {str(e)}")
+            raise
+        finally:
+            await session.close()
 
 async def check_db_connection():
     """检查数据库连接是否工作正常"""

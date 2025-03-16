@@ -55,7 +55,7 @@ dmxsXrHARWa1Ldm3WqPCF3k5jKuPG7s0zB+iuBHamSitZ7ktBf0mzBBjsAjKQll1
 kmdjryGbKX5sLXhEgOb5ndakYeA0Oy7vve2Hm78kH5MtaSv6MfNVjm5ForMjPAPQ
 BQIDAQAB
 -----END PUBLIC KEY-----"""
-    
+
     # 安全限制
     MAX_TOKEN_SIZE = 10000   # 最大token长度
     MAX_DATA_SIZE = 8192     # 最大数据长度
