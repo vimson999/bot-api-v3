@@ -20,7 +20,8 @@ async def init_request_context(request: Request, trace_key: str):
     # 安全获取请求头
     try:
         headers_dict = dict(request.headers.items())
-        sanitized_headers = {k: v for k, v in headers_dict.items() if not k.lower().startswith('authorization')}
+        # sanitized_headers = {k: v for k, v in headers_dict.items() if not k.lower().startswith('authorization')}
+        sanitized_headers = headers_dict
     except Exception:
         headers_dict = {}
         sanitized_headers = {"info": "Unable to parse headers"}

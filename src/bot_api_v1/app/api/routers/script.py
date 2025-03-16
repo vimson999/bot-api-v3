@@ -75,7 +75,8 @@ class ScriptResponse(BaseModel):
 )
 async def transcribe_audio(
     request: ScriptRequest,
-    db: Session = Depends(get_db)
+    request1: Request, 
+    db: Session = Depends(get_db  )
 ):
     """
     将URL指向的音频文件转写为文本
@@ -85,6 +86,34 @@ async def transcribe_audio(
     - 返回完整的转写文本及相关元数据
     """
     try:
+        # # 打印所有请求头
+        # print("所有请求头:")
+        # for header, value in request1.headers.items():
+        #     print(f"    {header}: {value}")
+        
+        # 你也可以获取特定的请求头
+        auth_header = request1.headers.get("authorization")
+        print(f"授权头: {auth_header}")
+        
+        
+        key是否存在
+        key是否状态靠谱
+        key是否在有效期
+        key是否还剩下次数
+        key关联购买的记录是
+        key的作用域字段
+        key激活日期
+        key手动关闭日期
+        创建人
+        激活人
+        关闭人
+        
+
+
+        # # 获取请求体内容
+        # body = await request1.json()
+        # print(f"请求体: {body}")
+
         # 下载音频
         audio_path, audio_title = await script_service.download_audio(request.url)
         

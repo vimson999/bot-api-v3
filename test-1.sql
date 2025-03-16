@@ -350,3 +350,4 @@ export default basekit;
 }
 
 
+git push https://vim999:e41eeb6d5f1fb9dc20c72c374eaff93a@gitee.com/vim999/bot_api_v1.git master
