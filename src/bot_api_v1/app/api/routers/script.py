@@ -71,8 +71,8 @@ class ScriptResponse(BaseModel):
     }
 )
 @TollgateConfig(
-    title="音频转写",
-    type="transcription",
+    title="获取文案",
+    type="url-get",
     base_tollgate="10",
     current_tollgate="1",
     plat="api"
@@ -92,19 +92,9 @@ async def transcribe_audio(
     - 返回完整的转写文本及相关元数据
     """
     try:
-        # # 打印所有请求头
-        # print("所有请求头:")
-        # for header, value in request1.headers.items():
-        #     print(f"    {header}: {value}")
-        
         # 你也可以获取特定的请求头
         auth_header = request1.headers.get("authorization")
         print(f"授权头: {auth_header}")
-
-
-        # # 获取请求体内容
-        # body = await request1.json()
-        # print(f"请求体: {body}")
 
         # 下载音频
         audio_path, audio_title = await script_service.download_audio(request.url)
@@ -145,6 +135,8 @@ async def transcribe_audio(
             status_code=500,
             detail=f"处理请求时发生未知错误: {str(e)}"
         )
+
+
 
 
 # 添加一个测试验签的接口
