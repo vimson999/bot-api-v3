@@ -289,12 +289,16 @@ CREATE TABLE rel_user_group (
 );
 
 
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
-
 -- 可以添加到meta_app表中
 ALTER TABLE meta_app ADD COLUMN sign_type VARCHAR(50) NOT NULL DEFAULT 'default';
 ALTER TABLE meta_app ADD COLUMN sign_config JSONB;
+
+
+
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
+
 
 ALTER USER postgres WITH PASSWORD 'psl#@!logIN4SS2000'
 

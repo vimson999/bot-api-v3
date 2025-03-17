@@ -9,11 +9,14 @@ from pydantic import BaseModel, HttpUrl, validator
 from sqlalchemy.orm import Session
 
 from bot_api_v1.app.utils.decorators.tollgate import TollgateConfig
+from bot_api_v1.app.utils.decorators.auth_key_checker import require_auth_key
+
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.schemas import BaseResponse
 from bot_api_v1.app.db.session import get_db
 from bot_api_v1.app.services.business.script_service import ScriptService, AudioDownloadError, AudioTranscriptionError
 from bot_api_v1.app.core.signature import require_signature
+
 
 router = APIRouter(prefix="/script", tags=["脚本服务"])
 
@@ -73,6 +76,7 @@ class ScriptResponse(BaseModel):
     current_tollgate="1",
     plat="api"
 )
+@require_auth_key()  # 添加授权密钥验证
 async def transcribe_audio(
     request: ScriptRequest,
     request1: Request, 
@@ -94,20 +98,6 @@ async def transcribe_audio(
         # 你也可以获取特定的请求头
         auth_header = request1.headers.get("authorization")
         print(f"授权头: {auth_header}")
-        
-        
-        key是否存在
-        key是否状态靠谱
-        key是否在有效期
-        key是否还剩下次数
-        key关联购买的记录是
-        key的作用域字段
-        key激活日期
-        key手动关闭日期
-        创建人
-        激活人
-        关闭人
-        
 
 
         # # 获取请求体内容
