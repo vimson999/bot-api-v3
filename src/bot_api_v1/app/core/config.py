@@ -65,6 +65,14 @@ class Settings(BaseSettings):
     # 性能和限流设置
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "100"))
     WORKERS_COUNT: int = int(os.getenv("WORKERS_COUNT", "4"))
+
+
+    # Feishu 捷径插件配置
+    ALLOWED_FEISHU_PACK_IDS: List[str] = os.getenv(
+        "ALLOWED_FEISHU_PACK_IDS", 
+        "debug_pack_id_1742102777762"
+    ).split(",")
+
     
     class Config:
         env_file = ".env"

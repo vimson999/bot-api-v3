@@ -66,8 +66,6 @@ BQIDAQAB
     ENABLE_CACHING = True    # 是否启用缓存
     CACHE_SIZE = 128         # 缓存大小
     
-    # 日志配置
-    LOG_LEVEL = logging.INFO
     
     @classmethod
     def from_env(cls):
@@ -82,9 +80,7 @@ BQIDAQAB
         instance.ENABLE_CACHING = os.getenv('FEISHU_ENABLE_CACHING', 'true').lower() == 'true'
         instance.CACHE_SIZE = int(os.getenv('FEISHU_CACHE_SIZE', cls.CACHE_SIZE))
         
-        # 日志级别
-        log_level_name = os.getenv('FEISHU_LOG_LEVEL', 'INFO')
-        instance.LOG_LEVEL = getattr(logging, log_level_name, logging.INFO)
+        
         
         # 从环境变量或文件加载公钥
         key_path = os.getenv('FEISHU_PUBLIC_KEY_PATH')
@@ -100,7 +96,6 @@ BQIDAQAB
 
 # 加载配置
 config = FeishuSignatureConfig.from_env()
-logger.setLevel(config.LOG_LEVEL)
 
 
 class CryptoProvider:
@@ -188,8 +183,8 @@ def rsa_verify_sign(data, sign_data, public_key, debug=False):
     trace_id = request_ctx.get_trace_key()
     start_time = time.time()
     
-    if debug:
-        logger.setLevel(logging.DEBUG)
+    # if debug:
+    #     logger.setLevel(logging.DEBUG)
     
     # 安全检查 - 限制输入大小
     if len(data) > config.MAX_DATA_SIZE:
@@ -282,8 +277,8 @@ def verify_feishu_token(token, debug=False, public_key=None, timeout=None):
     trace_id = str(uuid.uuid4())
     start_time = time.time()
     
-    if debug:
-        logger.setLevel(logging.DEBUG)
+    # if debug:
+    #     logger.setLevel(logging.DEBUG)
     
     # 使用提供的公钥或默认公钥
     if public_key is None:

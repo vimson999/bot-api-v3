@@ -16,6 +16,7 @@ from bot_api_v1.app.core.schemas import BaseResponse
 from bot_api_v1.app.db.session import get_db
 from bot_api_v1.app.services.business.script_service import ScriptService, AudioDownloadError, AudioTranscriptionError
 from bot_api_v1.app.core.signature import require_signature
+from bot_api_v1.app.utils.decorators.auth_feishu_sheet import require_feishu_signature
 
 
 router = APIRouter(prefix="/script", tags=["脚本服务"])
@@ -76,6 +77,7 @@ class ScriptResponse(BaseModel):
     current_tollgate="1",
     plat="api"
 )
+@require_feishu_signature()  # 添加飞书签名验证
 @require_auth_key()  # 添加授权密钥验证
 async def transcribe_audio(
     request: ScriptRequest,
