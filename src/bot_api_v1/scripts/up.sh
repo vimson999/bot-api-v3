@@ -110,7 +110,7 @@ if sudo systemctl is-active --quiet bot_api; then
     
     # 测试健康检查API
     log_info "正在测试健康检查API..."
-    HEALTH_CHECK=$(curl -s -X GET "http://localhost:8000/api/health" \
+    HEALTH_CHECK=$(curl -s -X GET "http://localhost/api/health" \
                  -H "Content-Type: application/json" \
                  -H "x-source: deployment" \
                  -H "x-app-id: deployment-script" \
@@ -142,7 +142,7 @@ end_time=$(date +%s)
 duration=$((end_time - start_time))
 
 log_info "部署完成！耗时 ${duration} 秒"
-log_info "API服务运行在 http://101.35.56.140:8000"
+log_info "API服务运行在 http://101.35.56.140"
 log_info "可以通过以下命令查看服务日志:"
 log_info "sudo journalctl -u bot_api -f"
 

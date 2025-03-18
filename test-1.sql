@@ -451,6 +451,14 @@ curl -X GET "http://101.35.56.140:8000/api/health" \
 
 
 
+curl -X GET "http://101.35.56.140/api/health" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user"
+
+
+
 curl -X POST "http://101.35.56.140:8000/api/script/transcribe" \
   -H "Content-Type: application/json" \
   -H "x-source: feishu-sheet" \
@@ -462,6 +470,17 @@ curl -X POST "http://101.35.56.140:8000/api/script/transcribe" \
   -d '{"url": "https://www.youtube.com/shorts/O8GAUEDR0Is"}'
 
 
+
+
+curl -X POST "http://101.35.56.140/api/script/transcribe" \
+  -H "Content-Type: application/json" \
+  -H "x-source: feishu-sheet" \
+  -H "x-app-id: sheet-api" \
+  -H "x-user-uuid: user-123456" \
+  -H "x-user-nickname: 晓山" \
+  -H "Authorization: test-auth-key-123456" \
+  -H "x-base-signature: eyJzb3VyY2UiOiJiYXNlIiwidmVyc2lvbiI6InYxIiwicGFja0lEIjoiZGVidWdfcGFja19pZF8xNzQyMTAyNzc3NzYyIiwiZXhwIjoxNzQyMjAwNDk5NDMwfQ==.jR1ZTNdWSUzQXmVa5sR9P-pb20PxSXNeO_3VRvhjC_49lBGN25QQYn_XNIvYaiSESZDyO24U_nLBwehJGc7TDATMnrkgeTi3tr5aA-4L_EqAXZpKGufVIdUIVxYkcXdK8E-AJB_CoNSrmczNC0BbxVdyDUzN1zyIpL5paFcDe3Zi29--OlbsBGijP6OhXeeWO8tc8qFAE6PhYdwpcNKEBiZnDFEdCpFZO2oyAiLWUQm1D030Ki0SNQybVIdHIfDzotv7nfzrLQTPdQfWKKUTdS4tqR__giiPxojslSCMcQHf9BBTYaZKoCpMj77DUoOWLiOHkSJCOpyPAROmsduvVQ==" \
+  -d '{"url": "https://www.bilibili.com/video/BV17eQNY2Eem?spm_id_from=333.1007.tianma.1-3-3.click"}'
 
 
 
@@ -486,10 +505,11 @@ curl -X POST "http://101.35.56.140:8000/api/script/transcribe" \
 不过，如果要达到完整的生产级别部署，你可能还需要考虑以下几个方面：
 
 HTTPS支持 - 通过Nginx或类似工具实现HTTPS和反向代理
+备份策略 - 定期备份数据库和关键配置
+
 负载均衡 - 如果预期有大量流量，添加负载均衡器
 监控 - 添加如Prometheus+Grafana的监控系统
 CI/CD - 实现自动化部署流程
-备份策略 - 定期备份数据库和关键配置
 更完善的日志管理 - 例如ELK栈或类似工具
 环境隔离 - 完全分离开发、测试和生产环境
 
@@ -503,3 +523,17 @@ sudo nginx -t  # 检查语法
 sudo systemctl restart nginx
 
 
+
+
+
+crontab -e
+0 3 * * * /code/bot_api/src/bot_api_v1/scripts/backup_db.sh >> /var/log/db_backups.log 2>&1
+crontab -l
+
+
+sudo touch /var/log/db_backups.log
+sudo chown lighthouse:lighthouse /var/log/db_backups.log
+
+
+查看服务是否在运行以及有无错误消息。如果服务已经崩溃，请查看日志以获取更多信息：
+sudo journalctl -u bot_api -n 100 --no-pager

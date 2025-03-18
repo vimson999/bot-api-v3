@@ -39,7 +39,7 @@ class ScriptService:
     
     def __init__(self, 
                  temp_dir: Optional[str] = None, 
-                 whisper_model: str = "small",
+                 whisper_model: str = "tiny",
                  max_parallel_chunks: int = 4,
                  chunk_duration: int = 60):
         """

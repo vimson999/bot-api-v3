@@ -1,7 +1,7 @@
 #!/bin/bash
 # PostgreSQL数据库备份脚本
 # 建议通过crontab定期执行，例如每天凌晨3点：
-# 0 3 * * * /code/bot_api/scripts/backup_db.sh >> /var/log/db_backups.log 2>&1
+# 0 3 * * * /code/bot_api/src/bot_api_v1/scripts/backup_db.sh >> /var/log/db_backups.log 2>&1
 
 # 定义变量
 BACKUP_DIR="/code/bot_api/backups"
@@ -11,8 +11,8 @@ DB_HOST="10.0.16.12"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_FILE="$BACKUP_DIR/${DB_NAME}_${TIMESTAMP}.sql.gz"
 LOG_FILE="$BACKUP_DIR/backup_history.log"
-MAX_BACKUPS=30  # 保留的最大备份数量
-RETENTION_DAYS=30  # 保留天数
+MAX_BACKUPS=7  # 保留的最大备份数量
+RETENTION_DAYS=7  # 保留天数
 
 # 颜色定义
 GREEN='\033[0;32m'
