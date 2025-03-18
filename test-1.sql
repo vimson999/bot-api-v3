@@ -495,6 +495,18 @@ curl -X POST "http://101.35.56.140:8000/api/script/transcribe" \
   -d '{"url": "https://www.bilibili.com/video/BV17eQNY2Eem?spm_id_from=333.1007.tianma.1-3-3.click"}'
 
 
+
+curl -X POST "http://localhost:8000/api/script/transcribe" \
+  -H "Content-Type: application/json" \
+  -H "x-source: feishu-sheet" \
+  -H "x-app-id: sheet-api" \
+  -H "x-user-uuid: user-123456" \
+  -H "x-user-nickname: 晓山" \
+  -H "Authorization: test-auth-key-123456" \
+  -H "x-base-signature: eyJzb3VyY2UiOiJiYXNlIiwidmVyc2lvbiI6InYxIiwicGFja0lEIjoiZGVidWdfcGFja19pZF8xNzQyMTAyNzc3NzYyIiwiZXhwIjoxNzQyMjAwNDk5NDMwfQ==.jR1ZTNdWSUzQXmVa5sR9P-pb20PxSXNeO_3VRvhjC_49lBGN25QQYn_XNIvYaiSESZDyO24U_nLBwehJGc7TDATMnrkgeTi3tr5aA-4L_EqAXZpKGufVIdUIVxYkcXdK8E-AJB_CoNSrmczNC0BbxVdyDUzN1zyIpL5paFcDe3Zi29--OlbsBGijP6OhXeeWO8tc8qFAE6PhYdwpcNKEBiZnDFEdCpFZO2oyAiLWUQm1D030Ki0SNQybVIdHIfDzotv7nfzrLQTPdQfWKKUTdS4tqR__giiPxojslSCMcQHf9BBTYaZKoCpMj77DUoOWLiOHkSJCOpyPAROmsduvVQ==" \
+  -d '{"url": "https://www.bilibili.com/video/BV17eQNY2Eem?spm_id_from=333.1007.tianma.1-3-3.click"}'
+
+
 是的，你目前的部署方式已经达到了基础的生产级别部署标准。通过使用systemd服务，你已经实现了几个重要的生产环境需求：
 
 服务持久化运行 - 应用作为systemd服务运行，即使在SSH会话结束后仍能继续运行
