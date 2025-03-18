@@ -492,3 +492,14 @@ CI/CD - 实现自动化部署流程
 备份策略 - 定期备份数据库和关键配置
 更完善的日志管理 - 例如ELK栈或类似工具
 环境隔离 - 完全分离开发、测试和生产环境
+
+
+
+
+配置nginx
+sudo nano /etc/nginx/sites-available/bot_api
+sudo ln -s /etc/nginx/sites-available/bot_api /etc/nginx/sites-enabled/
+sudo nginx -t  # 检查语法
+sudo systemctl restart nginx
+
+
