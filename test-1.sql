@@ -356,3 +356,139 @@ https://feishu.feishu.cn/docx/SZFpd9v6EoHMI7xEhWhckLLfnBh
 git push https://vim999:e41eeb6d5f1fb9dc20c72c374eaff93a@gitee.com/vim999/bot_api_v1.git master
 
 debug_pack_id_1742102777762
+
+
+
+
+git pull origin master
+
+# 配置pip使用清华大学镜像
+pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# 在项目根目录创建.env文件
+echo "DATABASE_URL=postgresql+asyncpg://cappa_rw:RWcappaDb!!!2025@10.0.16.12:5432/cappadocia_v1" > .env
+echo 'DATABASE_URL=postgresql+asyncpg://cappa_rw:RWcappaDb!!!2025@10.0.16.12:5432/cappa_p_v1' > .env
+
+# 确保你在项目目录中
+cd /code/bot_api
+# 设置Python路径
+export PYTHONPATH=$PWD/src:$PYTHONPATH
+
+uvicorn bot_api_v1.app.core.app_factory:create_app --host 0.0.0.0 --port 8000
+nohup uvicorn bot_api_v1.app.core.app_factory:create_app --host 0.0.0.0 --port 8000 > api.log 2>&1 &
+
+# 创建systemd服务文件
+sudo nano /etc/systemd/system/bot_api.service
+
+添加以下内容（注意替换用户名和路径）：
+[Unit]
+Description=Bot API Service
+After=network.target
+
+[Service]
+User=lighthouse
+Group=lighthouse
+WorkingDirectory=/code/bot_api
+Environment="PATH=/code/bot_api/venv/bin"
+Environment="PYTHONPATH=/code/bot_api/src"
+-- ExecStart=/code/bot_api/venv/bin/uvicorn bot_api_v1.app.core.app_factory:create_app --host 0.0.0.0 --port 8000
+ExecStart=/code/bot_api/venv/bin/gunicorn bot_api_v1.app.core.app_factory:create_app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+
+然后启用并启动服务：
+sudo systemctl daemon-reload
+sudo systemctl enable bot_api
+sudo systemctl start bot_api
+
+检查服务状态：
+sudo systemctl status bot_api
+
+
+重启服务
+sudo systemctl restart bot_api
+
+
+sudo apt update
+sudo apt install ffmpeg -y
+
+# 拉取最新代码
+cd /code/bot_api
+git pull
+
+# 安装新的依赖（如果有）
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 重启服务
+sudo systemctl restart bot_api
+
+
+
+sudo apt update
+sudo apt install ffmpeg -y
+
+
+查看服务状态：sudo systemctl status bot_api
+重启服务：sudo systemctl restart bot_api
+停止服务：sudo systemctl stop bot_api
+启动服务：sudo systemctl start bot_api
+查看服务日志：sudo journalctl -u bot_api -f
+
+
+
+
+curl -X GET "http://101.35.56.140:8000/api/health" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user"
+
+
+
+curl -X POST "http://101.35.56.140:8000/api/script/transcribe" \
+  -H "Content-Type: application/json" \
+  -H "x-source: feishu-sheet" \
+  -H "x-app-id: sheet-api" \
+  -H "x-user-uuid: user-123456" \
+  -H "x-user-nickname: 晓山" \
+  -H "Authorization: test-auth-key-123456" \
+  -H "x-base-signature: eyJzb3VyY2UiOiJiYXNlIiwidmVyc2lvbiI6InYxIiwicGFja0lEIjoiZGVidWdfcGFja19pZF8xNzQyMTAyNzc3NzYyIiwiZXhwIjoxNzQyMjAwNDk5NDMwfQ==.jR1ZTNdWSUzQXmVa5sR9P-pb20PxSXNeO_3VRvhjC_49lBGN25QQYn_XNIvYaiSESZDyO24U_nLBwehJGc7TDATMnrkgeTi3tr5aA-4L_EqAXZpKGufVIdUIVxYkcXdK8E-AJB_CoNSrmczNC0BbxVdyDUzN1zyIpL5paFcDe3Zi29--OlbsBGijP6OhXeeWO8tc8qFAE6PhYdwpcNKEBiZnDFEdCpFZO2oyAiLWUQm1D030Ki0SNQybVIdHIfDzotv7nfzrLQTPdQfWKKUTdS4tqR__giiPxojslSCMcQHf9BBTYaZKoCpMj77DUoOWLiOHkSJCOpyPAROmsduvVQ==" \
+  -d '{"url": "https://www.youtube.com/shorts/O8GAUEDR0Is"}'
+
+
+
+
+
+curl -X POST "http://101.35.56.140:8000/api/script/transcribe" \
+  -H "Content-Type: application/json" \
+  -H "x-source: feishu-sheet" \
+  -H "x-app-id: sheet-api" \
+  -H "x-user-uuid: user-123456" \
+  -H "x-user-nickname: 晓山" \
+  -H "Authorization: test-auth-key-123456" \
+  -H "x-base-signature: eyJzb3VyY2UiOiJiYXNlIiwidmVyc2lvbiI6InYxIiwicGFja0lEIjoiZGVidWdfcGFja19pZF8xNzQyMTAyNzc3NzYyIiwiZXhwIjoxNzQyMjAwNDk5NDMwfQ==.jR1ZTNdWSUzQXmVa5sR9P-pb20PxSXNeO_3VRvhjC_49lBGN25QQYn_XNIvYaiSESZDyO24U_nLBwehJGc7TDATMnrkgeTi3tr5aA-4L_EqAXZpKGufVIdUIVxYkcXdK8E-AJB_CoNSrmczNC0BbxVdyDUzN1zyIpL5paFcDe3Zi29--OlbsBGijP6OhXeeWO8tc8qFAE6PhYdwpcNKEBiZnDFEdCpFZO2oyAiLWUQm1D030Ki0SNQybVIdHIfDzotv7nfzrLQTPdQfWKKUTdS4tqR__giiPxojslSCMcQHf9BBTYaZKoCpMj77DUoOWLiOHkSJCOpyPAROmsduvVQ==" \
+  -d '{"url": "https://www.bilibili.com/video/BV17eQNY2Eem?spm_id_from=333.1007.tianma.1-3-3.click"}'
+
+
+是的，你目前的部署方式已经达到了基础的生产级别部署标准。通过使用systemd服务，你已经实现了几个重要的生产环境需求：
+
+服务持久化运行 - 应用作为systemd服务运行，即使在SSH会话结束后仍能继续运行
+自动重启 - 如果应用崩溃，systemd会自动重启它
+开机自启 - 服务器重启后，应用会自动启动
+日志管理 - systemd提供集中化的日志管理
+
+不过，如果要达到完整的生产级别部署，你可能还需要考虑以下几个方面：
+
+HTTPS支持 - 通过Nginx或类似工具实现HTTPS和反向代理
+负载均衡 - 如果预期有大量流量，添加负载均衡器
+监控 - 添加如Prometheus+Grafana的监控系统
+CI/CD - 实现自动化部署流程
+备份策略 - 定期备份数据库和关键配置
+更完善的日志管理 - 例如ELK栈或类似工具
+环境隔离 - 完全分离开发、测试和生产环境
