@@ -514,7 +514,7 @@ curl -X POST "http://localhost:8000/api/script/transcribe" \
 开机自启 - 服务器重启后，应用会自动启动
 日志管理 - systemd提供集中化的日志管理
 
-不过，如果要达到完整的生产级别部署，你可能还需要考虑以下几个方面：
+不过，如果要达到完整的生产级别部署，你可能m还需要考虑以下几个方面：
 
 HTTPS支持 - 通过Nginx或类似工具实现HTTPS和反向代理
 备份策略 - 定期备份数据库和关键配置
@@ -548,4 +548,8 @@ sudo chown lighthouse:lighthouse /var/log/db_backups.log
 
 
 查看服务是否在运行以及有无错误消息。如果服务已经崩溃，请查看日志以获取更多信息：
-sudo journalctl -u bot_api -n 100 --no-pager
+sudo journalctl -u bot_api -n 25 --no-pager
+
+
+
+ tree -L 7 -I 'venv'
