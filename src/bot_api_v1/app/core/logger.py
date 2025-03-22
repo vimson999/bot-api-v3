@@ -110,11 +110,89 @@ class LoggerInterface:
         extra = self._get_extra(kwargs)
         self._logger.bind(**extra).warning(msg)
     
+    
+
     def error(self, msg, *args, **kwargs):
-        """记录ERROR级别日志"""
+        """记录ERROR级别日志，同时保存到数据库"""
+        # 1. 获取上下文信息
         extra = self._get_extra(kwargs)
+        trace_key = extra.get('request_id', 'system')
         exc_info = kwargs.get('exc_info', False)
+        
+        # 2. 记录到文本日志
         self._logger.bind(**extra).error(msg, exception=exc_info)
+        
+        # 3. 获取其他日志相关信息
+        method_name = kwargs.get('method_name', extra.get('method_name', 'unknown'))
+        source = extra.get('source', 'api')
+        app_id = extra.get('app_id', None)
+        user_uuid = extra.get('user_id', None)
+        user_nickname = extra.get('user_name', None)
+        ip_address = extra.get('ip_address', None)
+        
+        # 确定tollgate值，错误通常使用base-9格式
+        base_tollgate = extra.get('base_tollgate', '10')
+        error_tollgate = f'{base_tollgate}-9'
+        
+        # 4. 使用全局任务系统注册异步日志任务，但不等待完成
+        from bot_api_v1.app.tasks.base import register_task, TASK_TYPE_LOG
+        from bot_api_v1.app.services.log_service import LogService
+        
+        try:
+            # 如果提供了异常信息，获取更详细的错误内容
+            error_detail = None
+            error_traceback = None
+
+            if exc_info:
+                import traceback
+                
+                if isinstance(exc_info, Exception):
+                    # 如果直接传入了异常对象
+                    error_detail = str(exc_info)
+                    # 获取这个异常的堆栈跟踪
+                    error_traceback = ''.join(traceback.format_exception(type(exc_info), exc_info, exc_info.__traceback__))
+                elif exc_info is True:
+                    # 如果exc_info为True，获取当前异常信息
+                    exc_type, exc_value, exc_tb = sys.exc_info()
+                    if exc_value is not None:
+                        error_detail = str(exc_value)
+                        # 获取当前异常的堆栈跟踪
+                        error_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+
+            # 组合详细错误信息和堆栈跟踪
+            full_error_info = f"{msg}\n\nDetails: {error_detail or 'No additional details'}"
+            if error_traceback:
+                full_error_info += f"\n\nTraceback:\n{error_traceback}"
+            
+            # 注册异步任务保存日志到数据库
+            register_task(
+                name=f"error_log:{method_name}",
+                coro=LogService.save_log(
+                    trace_key=trace_key,
+                    method_name=method_name,
+                    source=source,
+                    app_id=app_id,
+                    user_uuid=user_uuid,
+                    user_nickname=user_nickname,
+                    entity_id=None,
+                    type="error",
+                    tollgate=error_tollgate,
+                    level="error",
+                    para=None,
+                    header=None,
+                    body=full_error_info,  # 使用包含详细信息和堆栈跟踪的完整错误信息
+                    memo=f"Error: {msg}",  # memo仍保持简短以便于快速概览
+                    ip_address=ip_address
+                ),
+                timeout=60,  # 设置日志超时时间为60秒
+                task_type=TASK_TYPE_LOG
+            )
+        except Exception as log_error:
+            # 如果注册任务失败，记录到文本日志但不抛出异常
+            self._logger.bind(**extra).warning(
+                f"Error logging to database failed: {str(log_error)}"
+            )
+
     
     def critical(self, msg, *args, **kwargs):
         """记录CRITICAL级别日志"""

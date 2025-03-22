@@ -37,7 +37,8 @@ class DouyinService:
         
         # 从环境变量中获取 API_KEY
         load_dotenv()
-        self.api_key = os.getenv("TIKHUB_API_KEY", "4e0aD3t43VorozAD3XPqu0Qo7llWzbLeqpdekG3/r2Yf0W40UuRu6CiRBA==")
+        # self.api_key = os.getenv("TIKHUB_API_KEY", "4e0aD3t43VorozAD3XPqu0Qo7llWzbLeqpdekG3/r2Yf0W40UuRu6CiRBA==")
+        self.api_key = os.getenv("TIKHUB_API_KEY", "kb8MYVxz60AU+HU1imWLqSU1xCoQ0biDsYp3/TzLi1ZzzmU1c95h6g6pUw==")
 
         # 初始化 TikHub 客户端
         self.client = Client(api_key=self.api_key)
