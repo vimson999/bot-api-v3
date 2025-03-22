@@ -57,7 +57,10 @@ def create_app():
     app.include_router(api_router, prefix=settings.API_PREFIX)
     app.include_router(script.router, prefix="/script")
     app.include_router(douyin.router, prefix="/douyin")  # 添加抖音路由
-
+    
+    # 添加新的媒体路由
+    from bot_api_v1.app.api.routers import media
+    app.include_router(media.router, prefix="/media")
 
     # 注册异常处理器
     app.add_exception_handler(Exception, http_exception_handler)
