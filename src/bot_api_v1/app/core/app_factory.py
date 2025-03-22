@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 import asyncio
 
 from bot_api_v1.app.middlewares.logging_middleware import log_middleware
+from bot_api_v1.app.middlewares.request_counter import add_request_counter
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.exceptions import http_exception_handler, CustomException
 from bot_api_v1.app.api.main import router as api_router
@@ -18,6 +19,7 @@ from bot_api_v1.app.middlewares.rate_limit import RateLimitMiddleware
 from bot_api_v1.app.api.routers import script
 from bot_api_v1.app.api.routers import douyin  # 导入新的抖音路由
 
+from bot_api_v1.app.monitoring import setup_metrics, metrics_middleware, start_system_metrics_collector
 
 def create_app():
     """创建并配置FastAPI应用"""
@@ -53,6 +55,12 @@ def create_app():
     # if settings.ENVIRONMENT == "production":
     #     app.add_middleware(RateLimitMiddleware)
 
+    # 5. 添加请求计数中间件
+    add_request_counter(app)
+    
+    # 6. 添加Prometheus指标中间件
+    metrics_middleware(app)
+
     # 注册路由
     app.include_router(api_router, prefix=settings.API_PREFIX)
     app.include_router(script.router, prefix="/script")
@@ -65,10 +73,28 @@ def create_app():
     # 注册异常处理器
     app.add_exception_handler(Exception, http_exception_handler)
     
+    # 初始化Prometheus指标
+    setup_metrics(app, app_name=settings.PROJECT_NAME)
+    
+    # 启动系统指标收集
+    start_system_metrics_collector(app)
+
     # 添加启动事件处理器
     @app.on_event("startup")
     async def startup_event():
         try:
+            # 记录应用启动时间
+            app.state.startup_time = time.time()
+            
+            # 初始化请求计数器
+            app.state.request_counts = {
+                "total": 0,
+                "success": 0,
+                "error": 0,
+                "by_endpoint": {},
+                "by_method": {}
+            }
+            
             # 等待数据库可用
             if not await wait_for_db(
                 max_retries=settings.DB_CONNECT_RETRIES,

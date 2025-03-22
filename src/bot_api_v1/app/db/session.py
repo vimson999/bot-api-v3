@@ -10,6 +10,9 @@ from bot_api_v1.app.core.config import settings
 import time
 import asyncio
 
+from bot_api_v1.app.db.metrics import patch_sqlalchemy_metrics
+
+
 logger = logging.getLogger(__name__)
 
 # 添加连接重试逻辑
@@ -46,6 +49,10 @@ engine = get_engine(
         }
     }
 )
+
+
+# 应用SQLAlchemy监控补丁
+patch_sqlalchemy_metrics()
 
 # 重写连接生成逻辑以添加自定义错误处理
 class CustomAsyncSession(AsyncSession):
