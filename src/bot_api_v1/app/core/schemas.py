@@ -43,7 +43,7 @@ class PaginatedResponse(BaseResponse[PaginatedData]):
 
 class MediaAuthor(BaseModel):
     id: str = Field(..., description="作者ID")
-    sec_id: str = Field(..., description="作者安全ID/唯一标识")
+    sec_uid: str = Field(..., description="作者安全ID/唯一标识")
     nickname: str = Field(..., description="作者昵称")
     avatar: Optional[str] = Field(None, description="头像URL")
     signature: Optional[str] = Field(None, description="个人签名")

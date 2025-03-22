@@ -107,7 +107,7 @@ class MediaService:
             
             "author": {
                 "id": video_info.get("author", {}).get("uid", ""),
-                "sec_id": video_info.get("author", {}).get("sec_uid", ""),
+                "sec_uid": video_info.get("author", {}).get("sec_uid", ""),
                 "nickname": video_info.get("author", {}).get("nickname", ""),
                 "avatar": video_info.get("author", {}).get("avatar", ""),
                 "signature": video_info.get("author", {}).get("signature", ""),
@@ -162,7 +162,7 @@ class MediaService:
             
             "author": {
                 "id": "user_xhs_123456",
-                "sec_id": "xhs_sec_id_abcdef",
+                "sec_uid": "xhs_sec_id_abcdef",
                 "nickname": "小红书测试用户",
                 "avatar": "https://example.com/avatar.jpg",
                 "signature": "这是一个测试签名",

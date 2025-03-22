@@ -53,8 +53,7 @@ curl -X POST "http://localhost:8000/api/media/extract" \
   -H "x-source: test-client" \
   -H "x-app-id: test-app" \
   -H "x-user-uuid: test-user" \
-  -d '{"url": "https://www.douyin.com/video/7123456789", "extract_text": true}'
-
+  -d '{"url": "https://www.douyin.com/video/7454208045808225595", "extract_text": true}'
 
 
 

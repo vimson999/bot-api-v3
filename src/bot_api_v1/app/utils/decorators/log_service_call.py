@@ -195,7 +195,7 @@ def log_service_call(
                 return result
             except Exception as e:
                 # 记录失败结果 - 使用异步管理但不等待完成
-                asyncio.create_task(log_execution_result(context, start_time, error=e))
+                asyncio.ensure_future(log_execution_result(context, start_time, error=e))
                 
                 # 重新抛出异常
                 raise
@@ -228,7 +228,7 @@ def log_service_call(
                 return result
             except Exception as e:
                 # 异步记录失败结果（创建任务但不等待）
-                asyncio.create_task(log_execution_result(context, start_time, error=e))
+                asyncio.ensure_future(log_execution_result(context, start_time, error=e))
                 
                 # 重新抛出异常
                 raise

@@ -37,8 +37,10 @@ class DouyinService:
         
         # 从环境变量中获取 API_KEY
         load_dotenv()
-        # self.api_key = os.getenv("TIKHUB_API_KEY", "4e0aD3t43VorozAD3XPqu0Qo7llWzbLeqpdekG3/r2Yf0W40UuRu6CiRBA==")
-        self.api_key = os.getenv("TIKHUB_API_KEY", "kb8MYVxz60AU+HU1imWLqSU1xCoQ0biDsYp3/TzLi1ZzzmU1c95h6g6pUw==")
+        self.api_key = os.getenv("TIKHUB_API_KEY", "4e0aD3t43VorozAD3XPqu0Qo7llWzbLeqpdekG3/r2Yf0W40UuRu6CiRBA==")
+        # self.api_key = os.getenv("TIKHUB_API_KEY", "kb8MYVxz60AU+HU1imWLqSU1xCoQ0biDsYp3/TzLi1ZzzmU1c95h6g6pUw==")
+        # self.api_key = os.getenv("TIKHUB_API_KEY", "kIY3FmRG+UsN4RQj6Ea8pFoBhBQOqqWHlqhXy2nEuU8S7A4LccFj1AC4Pg==")
+
 
         # 初始化 TikHub 客户端
         self.client = Client(api_key=self.api_key)
@@ -73,7 +75,15 @@ class DouyinService:
         
         try:
             # 调用TikHub SDK获取视频信息
+            # video_data = await self.client.DouyinAppV3.fetch_one_video_by_share_url('https://v.douyin.com/FyG7GEh6Zm8/')
+            # video_data = await self.client.DouyinAppV3.fetch_one_video('7454208045808225595')
             video_data = await self.client.DouyinAppV3.fetch_one_video_by_share_url(video_url)
+            # video_data = await self.client.DouyinAppV3.fetch_one_video_by_share_url('https://v.douyin.com/i53yJjA3/')
+
+
+            # logger.info(f"douyin-get_video_info-抖音视频信息获取成功: {video_data}, extract_text={extract_text}", 
+            #         extra={"request_id": trace_key})
+            
             
             if not video_data or 'data' not in video_data or 'aweme_detail' not in video_data['data']:
                 error_msg = f"未能获取有效的视频信息，API响应: {json.dumps(video_data, ensure_ascii=False)}"
@@ -100,6 +110,7 @@ class DouyinService:
                 "create_time": aweme_detail.get('create_time', 0),
                 "author": {
                     "uid": aweme_detail.get('author', {}).get('uid', ''),
+                    "sec_uid": aweme_detail.get('author', {}).get('sec_uid', ''),
                     "short_id": aweme_detail.get('author', {}).get('short_id', ''),
                     "nickname": aweme_detail.get('author', {}).get('nickname', ''),
                     "signature": aweme_detail.get('author', {}).get('signature', ''),
@@ -115,6 +126,7 @@ class DouyinService:
                     "comment_count": aweme_detail.get('statistics', {}).get('comment_count', 0),
                     "digg_count": aweme_detail.get('statistics', {}).get('digg_count', 0),
                     "share_count": aweme_detail.get('statistics', {}).get('share_count', 0),
+                    "collect_count": aweme_detail.get('statistics', {}).get('collect_count', 0),
                     "play_count": aweme_detail.get('statistics', {}).get('play_count', 0)
                 },
                 "video_url": play_addr,

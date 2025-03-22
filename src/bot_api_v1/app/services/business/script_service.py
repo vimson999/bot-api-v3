@@ -212,7 +212,7 @@ class ScriptService:
             
             logger.info(f"音频时长: {audio_duration:.2f}秒", extra={"request_id": trace_key})
             
-            if audio_duration <= 180:  # 3分钟以内直接转写
+            if audio_duration <= 1800:  # 3分钟以内直接转写
                 logger.info("音频时长小于3分钟，直接转写", extra={"request_id": trace_key})
                 result = model.transcribe(audio_path)
                 text = result.get("text", "").strip()

@@ -564,7 +564,7 @@ sudo journalctl -u bot_api -n 25 --no-pager
   -H "x-user-nickname: 晓山" \
   -H "Authorization: test-auth-key-123456" \
   -H "x-base-signature: eyJzb3VyY2UiOiJiYXNlIiwidmVyc2lvbiI6InYxIiwicGFja0lEIjoiZGVidWdfcGFja19pZF8xNzQyMTAyNzc3NzYyIiwiZXhwIjoxNzQyMjAwNDk5NDMwfQ==.jR1ZTNdWSUzQXmVa5sR9P-pb20PxSXNeO_3VRvhjC_49lBGN25QQYn_XNIvYaiSESZDyO24U_nLBwehJGc7TDATMnrkgeTi3tr5aA-4L_EqAXZpKGufVIdUIVxYkcXdK8E-AJB_CoNSrmczNC0BbxVdyDUzN1zyIpL5paFcDe3Zi29--OlbsBGijP6OhXeeWO8tc8qFAE6PhYdwpcNKEBiZnDFEdCpFZO2oyAiLWUQm1D030Ki0SNQybVIdHIfDzotv7nfzrLQTPdQfWKKUTdS4tqR__giiPxojslSCMcQHf9BBTYaZKoCpMj77DUoOWLiOHkSJCOpyPAROmsduvVQ==" \
-  -d '{"url": "https://www.douyin.com/video/7475254041207950642", "extract_text": false}'
+  -d '{"url": "https://v.douyin.com/i53yJjA3/", "extract_text": false}'
 
 # 2. 测试抖音视频信息API (提取文案)
 curl -X POST "http://localhost:8000/api/douyin/video/info" \
@@ -575,7 +575,7 @@ curl -X POST "http://localhost:8000/api/douyin/video/info" \
   -H "x-user-nickname: 晓山" \
   -H "Authorization: test-auth-key-123456" \
   -H "x-base-signature: eyJzb3VyY2UiOiJiYXNlIiwidmVyc2lvbiI6InYxIiwicGFja0lEIjoiZGVidWdfcGFja19pZF8xNzQyMTAyNzc3NzYyIiwiZXhwIjoxNzQyMjAwNDk5NDMwfQ==.jR1ZTNdWSUzQXmVa5sR9P-pb20PxSXNeO_3VRvhjC_49lBGN25QQYn_XNIvYaiSESZDyO24U_nLBwehJGc7TDATMnrkgeTi3tr5aA-4L_EqAXZpKGufVIdUIVxYkcXdK8E-AJB_CoNSrmczNC0BbxVdyDUzN1zyIpL5paFcDe3Zi29--OlbsBGijP6OhXeeWO8tc8qFAE6PhYdwpcNKEBiZnDFEdCpFZO2oyAiLWUQm1D030Ki0SNQybVIdHIfDzotv7nfzrLQTPdQfWKKUTdS4tqR__giiPxojslSCMcQHf9BBTYaZKoCpMj77DUoOWLiOHkSJCOpyPAROmsduvVQ==" \
-  -d '{"url": "https://www.douyin.com/video/7475254041207950642", "extract_text": true}'
+  -d '{"url": "https://v.douyin.com/i53yJjA3/", "extract_text": true}'
 
 
 
@@ -588,3 +588,14 @@ curl -X POST "http://localhost:8000/api/douyin/user/info" \
   -H "Authorization: test-auth-key-123456" \
   -H "x-base-signature: eyJzb3VyY2UiOiJiYXNlIiwidmVyc2lvbiI6InYxIiwicGFja0lEIjoiZGVidWdfcGFja19pZF8xNzQyMTAyNzc3NzYyIiwiZXhwIjoxNzQyMjAwNDk5NDMwfQ==.jR1ZTNdWSUzQXmVa5sR9P-pb20PxSXNeO_3VRvhjC_49lBGN25QQYn_XNIvYaiSESZDyO24U_nLBwehJGc7TDATMnrkgeTi3tr5aA-4L_EqAXZpKGufVIdUIVxYkcXdK8E-AJB_CoNSrmczNC0BbxVdyDUzN1zyIpL5paFcDe3Zi29--OlbsBGijP6OhXeeWO8tc8qFAE6PhYdwpcNKEBiZnDFEdCpFZO2oyAiLWUQm1D030Ki0SNQybVIdHIfDzotv7nfzrLQTPdQfWKKUTdS4tqR__giiPxojslSCMcQHf9BBTYaZKoCpMj77DUoOWLiOHkSJCOpyPAROmsduvVQ==" \
   -d '{"user_id": "MS4wLjABAAAAFec6xaVDCLvpqpB-Vd4_qsTgwFlJM1Y2r_ZSoFGHRG8t7wa1vCK1tDnmL_s22_mD"}'
+
+
+
+
+
+curl -X POST "http://localhost:8000/api/media/extract" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test-client" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user" \
+  -d '{"url": "https://www.douyin.com/video/7475254041207950642", "extract_text": true}'
