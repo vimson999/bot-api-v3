@@ -55,11 +55,15 @@ def create_app():
     # if settings.ENVIRONMENT == "production":
     #     app.add_middleware(RateLimitMiddleware)
 
+
+
     # 5. 添加请求计数中间件
-    add_request_counter(app)
+    # add_request_counter(app)
     
-    # 6. 添加Prometheus指标中间件
-    metrics_middleware(app)
+    # # 6. 添加Prometheus指标中间件
+    # metrics_middleware(app)
+
+
 
     # 注册路由
     app.include_router(api_router, prefix=settings.API_PREFIX)
@@ -74,10 +78,10 @@ def create_app():
     app.add_exception_handler(Exception, http_exception_handler)
     
     # 初始化Prometheus指标
-    setup_metrics(app, app_name=settings.PROJECT_NAME)
+    # setup_metrics(app, app_name=settings.PROJECT_NAME)
     
-    # 启动系统指标收集
-    start_system_metrics_collector(app)
+    # # 启动系统指标收集
+    # start_system_metrics_collector(app)
 
     # 添加启动事件处理器
     @app.on_event("startup")
@@ -139,3 +143,4 @@ def create_app():
         logger.info("Application shutdown completed")
     
     return app
+

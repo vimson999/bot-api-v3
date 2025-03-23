@@ -599,3 +599,15 @@ curl -X POST "http://localhost:8000/api/media/extract" \
   -H "x-app-id: test-app" \
   -H "x-user-uuid: test-user" \
   -d '{"url": "https://www.douyin.com/video/7475254041207950642", "extract_text": true}'
+
+
+
+
+curl -X POST "http://localhost:8000/api/media/extract" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test-client" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user" \
+  -d '{"url": "https://www.xiaohongshu.com/explore/67cc347d000000000602a583?xsec_token=ABgdCG8TSk2e_lpVMi49OnDlhTot4KcZMDAoAR2YQfD0A=&xsec_source=pc_feed", "extract_text": true}'
+
+

@@ -8,6 +8,7 @@ from bot_api_v1.app.utils.decorators.log_service_call import log_service_call
 from bot_api_v1.app.core.cache import cache_result
 from bot_api_v1.app.services.business.douyin_service import DouyinService, DouyinError
 from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
+from bot_api_v1.app.services.business.xhs_service import XHSService
 
 class MediaPlatform:
     """媒体平台枚举"""
@@ -25,6 +26,7 @@ class MediaService:
     def __init__(self):
         """初始化服务"""
         self.douyin_service = DouyinService()
+        self.xhs_service = XHSService()  # 使用新的XHSService
     
     def identify_platform(self, url: str) -> str:
         """
@@ -141,57 +143,107 @@ class MediaService:
         return result
     
     async def _process_xiaohongshu(self, url: str, extract_text: bool, include_comments: bool) -> Dict[str, Any]:
-        """处理小红书内容 (临时Mock实现)"""
+        """处理小红书内容"""
         trace_key = request_ctx.get_trace_key()
-        logger.info(f"处理小红书内容(mock): {url}", extra={"request_id": trace_key})
+        logger.info(f"处理小红书内容: {url}", extra={"request_id": trace_key})
         
-        # 从URL中提取ID或使用随机ID
-        video_id = url.split('/')[-1] if '/' in url else "mock_id_123456"
-        
-        # 返回Mock数据
-        current_time = datetime.now().isoformat()
-        
-        return {
-            "platform": MediaPlatform.XIAOHONGSHU,
-            "video_id": video_id,
-            "original_url": url,
-            "title": "小红书测试视频标题",
-            "description": "这是一段小红书视频的详细描述，用于展示小红书内容的结构和格式。",
-            "content": "这是一段小红书视频的测试文案内容。Mock数据仅用于测试统一API功能。" if extract_text else "",
-            "tags": ["测试", "小红书", "视频"],
+        try:
+            # 调用XHSService获取小红书笔记信息
+            note_info = await self.xhs_service.get_note_info(url, extract_text=extract_text)
             
-            "author": {
-                "id": "user_xhs_123456",
-                "sec_uid": "xhs_sec_id_abcdef",
-                "nickname": "小红书测试用户",
-                "avatar": "https://example.com/avatar.jpg",
-                "signature": "这是一个测试签名",
-                "verified": True,
-                "follower_count": 10000,
-                "following_count": 500,
-                "region": "上海"
-            },
+            # 转换为统一结构
+            result = {
+                "platform": MediaPlatform.XIAOHONGSHU,
+                "video_id": note_info.get("note_id", ""),
+                "original_url": url,
+                "title": note_info.get("title", ""),
+                "description": note_info.get("desc", ""),
+                "content": note_info.get("transcribed_text", "") if extract_text else "",
+                "tags": note_info.get("tags", []),
+                
+                "author": {
+                    "id": note_info.get("author", {}).get("id", ""),
+                    "sec_uid": note_info.get("author", {}).get("user_id", ""),
+                    "nickname": note_info.get("author", {}).get("nickname", ""),
+                    "avatar": note_info.get("author", {}).get("avatar", ""),
+                    "signature": note_info.get("author", {}).get("signature", ""),
+                    "verified": note_info.get("author", {}).get("verified", False),
+                    "follower_count": note_info.get("author", {}).get("follower_count", 0),
+                    "following_count": note_info.get("author", {}).get("following_count", 0),
+                    "region": note_info.get("author", {}).get("location", "")
+                },
+                
+                "statistics": {
+                    "like_count": note_info.get("statistics", {}).get("like_count", 0),
+                    "comment_count": note_info.get("statistics", {}).get("comment_count", 0),
+                    "share_count": note_info.get("statistics", {}).get("share_count", 0),
+                    "collect_count": note_info.get("statistics", {}).get("collected_count", 0),
+                    "play_count": note_info.get("statistics", {}).get("view_count", 0)
+                },
+                
+                "media": {
+                    "cover_url": note_info.get("media", {}).get("cover_url", ""),
+                    "video_url": note_info.get("media", {}).get("video_url", ""),
+                    "duration": note_info.get("media", {}).get("duration", 0),
+                    "width": note_info.get("media", {}).get("width", 0),
+                    "height": note_info.get("media", {}).get("height", 0),
+                    "quality": "normal"
+                },
+                
+                "publish_time": self._format_timestamp(note_info.get("create_time", 0)),
+                "update_time": self._format_timestamp(note_info.get("last_update_time", 0))
+            }
             
-            "statistics": {
-                "like_count": 1500,
-                "comment_count": 120,
-                "share_count": 45,
-                "collect_count": 800,
-                "play_count": 5000
-            },
+            return result
             
-            "media": {
-                "cover_url": "https://example.com/cover.jpg",
-                "video_url": url,
-                "duration": 60,
-                "width": 1080,
-                "height": 1920,
-                "quality": "high"
-            },
+        except Exception as e:
+            # 记录错误并返回基本信息
+            error_msg = f"处理小红书内容时出错: {str(e)}"
+            logger.error(error_msg, exc_info=True, extra={"request_id": trace_key})
             
-            "publish_time": current_time,
-            "update_time": current_time
-        }
+            # 从URL中提取ID或使用随机ID
+            video_id = url.split('/')[-1] if '/' in url else "mock_id_123456"
+            current_time = datetime.now().isoformat()
+            
+            # 返回出错时的默认信息
+            return {
+                "platform": MediaPlatform.XIAOHONGSHU,
+                "video_id": video_id,
+                "original_url": url,
+                "title": "小红书内容 (处理失败)",
+                "description": f"提取内容失败: {str(e)}",
+                "content": "",
+                "tags": [],
+                "author": {
+                    "id": "",
+                    "sec_uid": "",
+                    "nickname": "未知用户",
+                    "avatar": "",
+                    "signature": "",
+                    "verified": False,
+                    "follower_count": 0,
+                    "following_count": 0,
+                    "region": ""
+                },
+                "statistics": {
+                    "like_count": 0,
+                    "comment_count": 0,
+                    "share_count": 0,
+                    "collect_count": 0,
+                    "play_count": 0
+                },
+                "media": {
+                    "cover_url": "",
+                    "video_url": "",
+                    "duration": 0,
+                    "width": 0,
+                    "height": 0,
+                    "quality": ""
+                },
+                "publish_time": current_time,
+                "update_time": current_time,
+                "error": error_msg
+            }
     
     def _extract_tags_from_douyin(self, video_info: Dict[str, Any]) -> List[str]:
         """从抖音视频信息中提取标签"""
