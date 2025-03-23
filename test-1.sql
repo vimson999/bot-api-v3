@@ -611,3 +611,18 @@ curl -X POST "http://localhost:8000/api/media/extract" \
   -d '{"url": "https://www.xiaohongshu.com/explore/67cc347d000000000602a583?xsec_token=ABgdCG8TSk2e_lpVMi49OnDlhTot4KcZMDAoAR2YQfD0A=&xsec_source=pc_feed", "extract_text": true}'
 
 
+
+
+
+# 在您的项目根目录执行
+mkdir -p src/bot_api_v1/libs
+git submodule add https://github.com/vimson999/Spider_XHS.git src/bot_api_v1/libs/spider_xhs
+git submodule update --init --recursive
+
+
+
+cat src/bot_api_v1/libs/spider_xhs/requirements.txt >> requirements.txt
+pip install -r requirements.txt
+
+cd src/bot_api_v1/libs/spider_xhs
+npm install
