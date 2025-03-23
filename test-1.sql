@@ -612,6 +612,15 @@ curl -X POST "http://localhost:8000/api/media/extract" \
 
 
 
+curl -X POST "http://localhost:8000/api/media/extract" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test-client" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user" \
+  -d '{"url": "https://www.xiaohongshu.com/explore/64674a91000000001301762e?xsec_token=ABAJcy_294mBZauFhAac6izmJvYB6yqm49MAtXSVU8XA4=&xsec_source=pc_feed", "extract_text": true}'
+
+
+
 
 
 # 在您的项目根目录执行

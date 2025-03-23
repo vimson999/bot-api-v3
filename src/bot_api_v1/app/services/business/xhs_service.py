@@ -26,19 +26,29 @@ class MediaType:
     IMAGE = "image"
     UNKNOWN = "unknown"
 
-# 通过环境变量或相对路径获取项目根目录
-ROOT_DIR = Path(os.getenv("BOT_API_ROOT", str(Path(__file__).resolve().parents[4])))
+# # 通过环境变量或相对路径获取项目根目录
+# ROOT_DIR = Path(os.getenv("BOT_API_ROOT", str(Path(__file__).resolve().parents[4])))
+# SPIDER_XHS_PATH = ROOT_DIR / "libs" / "spider_xhs"
+# # 设置NODE_PATH指向子模块的node_modules目录
+# os.environ["NODE_PATH"] = str(SPIDER_XHS_PATH / "node_modules")
+# # 添加子模块路径到系统路径
+# sys.path.append(str(SPIDER_XHS_PATH))
+
+
+# 确定项目根目录和Spider_XHS路径
+ROOT_DIR = Path(__file__).parent.parent.parent.parent
 SPIDER_XHS_PATH = ROOT_DIR / "libs" / "spider_xhs"
 # 设置NODE_PATH指向子模块的node_modules目录
 os.environ["NODE_PATH"] = str(SPIDER_XHS_PATH / "node_modules")
-# 添加子模块路径到系统路径
 sys.path.append(str(SPIDER_XHS_PATH))
+
 
 # 导入小红书子模块
 try:
     from apis.pc_apis import XHS_Apis
     from xhs_utils.data_util import handle_note_info, download_note
     from xhs_utils.common_utils import init as xhs_init, load_env
+    
     SPIDER_XHS_LOADED = True
 except ImportError as e:
     logger.error(f"无法导入小红书子模块: {str(e)}")

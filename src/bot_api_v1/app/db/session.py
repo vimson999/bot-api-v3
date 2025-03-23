@@ -97,15 +97,21 @@ async def get_db():
         finally:
             await session.close()
 
+
+
 async def check_db_connection():
     """检查数据库连接是否工作正常"""
     try:
-        # 创建一个临时连接并执行简单查询
-        async with engine.connect() as conn:
+        # 不使用上下文管理器，而是显式管理连接
+        conn = await engine.connect()
+        try:
             result = await conn.execute(sqlalchemy.text("SELECT 1"))
-            await result.fetchone()
-        logger.info("Database connection check: SUCCESS")
-        return True
+            # 不要await result.fetchone()，因为它不是协程
+            value = result.fetchone()
+            logger.info("Database connection check: SUCCESS")
+            return True
+        finally:
+            await conn.close()
     except Exception as e:
         logger.error(f"Database connection check: FAILED - {str(e)}")
         return False

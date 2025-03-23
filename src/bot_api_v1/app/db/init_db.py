@@ -18,9 +18,8 @@ logger = logging.getLogger(__name__)
 async def check_connection():
     """验证数据库连接"""
     try:
-        async with engine.begin() as conn:
-            await conn.execute(text("SELECT 1"))
-        return True
+        from bot_api_v1.app.db.session import check_db_connection
+        return await check_db_connection()
     except Exception as e:
         logger.error(f"Database connection check failed: {str(e)}")
         return False
@@ -46,7 +45,8 @@ async def init_db(use_alembic=True):
     """
     try:
         # 检查连接
-        if not await check_connection():
+        connection_ok = await check_connection()
+        if not connection_ok:
             raise Exception("无法连接到数据库，初始化中止")
         
         # 创建扩展
@@ -83,13 +83,12 @@ async def init_db(use_alembic=True):
         logger.error(f"初始化数据库出错: {str(e)}")
         raise
 
-
-
 async def wait_for_db(max_retries: int = 60, interval: int = 1):
     """等待数据库可用"""
     retry_count = 0
     while retry_count < max_retries:
-        if await check_connection():
+        connection_ok = await check_connection()
+        if connection_ok:
             logger.info("Database is available")
             return True
         
