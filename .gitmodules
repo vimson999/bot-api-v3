@@ -1,0 +1,3 @@
+[submodule "src/bot_api_v1/libs/spider_xhs"]
+	path = src/bot_api_v1/libs/spider_xhs
+	url = https://github.com/vimson999/Spider_XHS.git
