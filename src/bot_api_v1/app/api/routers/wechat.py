@@ -15,6 +15,8 @@ from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.core.exceptions import CustomException
 from bot_api_v1.app.db.session import get_db
 from bot_api_v1.app.services.business.wechat_service import WechatService, WechatError
+from bot_api_v1.app.services.business.points_service import PointsService, PointsError
+
 from bot_api_v1.app.utils.decorators.tollgate import TollgateConfig
 
 
@@ -23,8 +25,12 @@ router = APIRouter(prefix="/wechat", tags=["微信小程序"])
 
 # 请求模型
 class LoginRequest(BaseModel):
-    """微信小程序登录请求"""
+    """微信一站式登录请求模型"""
     code: str = Field(..., description="微信登录临时凭证")
+    need_points: bool = Field(False, description="是否需要积分")
+    userInfo: Optional[Dict[str, Any]] = Field(None, description="用户信息(昵称、头像等)")
+
+
 
 
 class UserInfoRequest(BaseModel):
@@ -45,6 +51,7 @@ class TokenRefreshRequest(BaseModel):
 
 # 实例化微信服务
 wechat_service = WechatService()
+points_service = PointsService()
 
 
 # 定义依赖函数
@@ -104,7 +111,88 @@ async def login(
     trace_key = request_ctx.get_trace_key()
     
     try:
-        result = await wechat_service.login(login_data.code, db)
+        login_result = await wechat_service.login(login_data.code, db)
+        
+        user_id = login_result.get("user_id")
+        is_new_user = login_result.get("is_new_user", False)
+        
+        # 2. 如果提供了用户信息，更新用户资料
+        user_info = None
+        if login_data.userInfo and user_id:
+            try:
+                user_info = await wechat_service.update_user_info(
+                    user_id=user_id,
+                    user_info=login_data.userInfo,
+                    db=db
+                )
+                logger.info(
+                    f"用户信息更新成功: {user_id}",
+                    extra={"request_id": trace_key, "user_id": user_id}
+                )
+            except Exception as e:
+                # 用户信息更新失败不影响登录流程
+                logger.warning(
+                    f"用户信息更新失败: {str(e)}",
+                    extra={"request_id": trace_key, "user_id": user_id}
+                )
+
+        # 4. 获取用户积分信息
+        points_info = {}
+        try:
+            if user_id:
+                points_info = await points_service.get_user_points(user_id, db)
+                logger.info(
+                    f"用户积分获取成功: {user_id}",
+                    extra={
+                        "request_id": trace_key,
+                        "user_id": user_id,
+                        "available_points": points_info.get("available_points", 0)
+                    }
+                )
+        except Exception as e:
+            # 积分获取失败不影响登录流程
+            logger.warning(
+                f"用户积分获取失败: {str(e)}",
+                extra={"request_id": trace_key, "user_id": user_id}
+            )
+            points_info = {
+                "available_points": 0,
+                "total_points": 0,
+                "frozen_points": 0,
+                "used_points": 0,
+                "expired_points": 0
+            }
+
+
+
+        result = {
+            "token": login_result.get("token"),
+            "expires_in": login_result.get("expires_in"),
+            "userInfo": user_info or {
+                "user_id": user_id,
+                "openid": login_result.get("openid"),
+                "is_new_user": is_new_user
+            },
+            "points": {
+                "available": points_info.get("available_points", 0),
+                "total": points_info.get("total_points", 0),
+                "frozen": points_info.get("frozen_points", 0),
+                "used": points_info.get("used_points", 0),
+                "expired": points_info.get("expired_points", 0),
+                "expiring_soon": points_info.get("expiring_soon", [])
+            }
+        }
+
+        
+        logger.info(
+            f"用户一站式登录成功: {user_id}",
+            extra={
+                "request_id": trace_key,
+                "user_id": user_id,
+                "is_new_user": is_new_user
+            }
+        )
+
         
         return BaseResponse(
             code=200,
@@ -121,7 +209,7 @@ async def login(
         )
 
 
-@router.post(
+@router.get(
     "/user/info",
     response_model=BaseResponse,
     description="更新用户信息",
@@ -134,43 +222,140 @@ async def login(
     current_tollgate="1",
     plat="wechat_mini"
 )
-async def update_user_info(
+async def get_user_info(
     request: Request,
-    user_info: UserInfoRequest,
-    user_data: Dict[str, Any] = Depends(verify_token),
+    token: str = Header(..., description="JWT Token", alias="Authorization"),
     db: AsyncSession = Depends(get_db)
 ):
     """
-    更新微信用户信息
+    获取当前用户的基本信息和积分数据
     
-    接收微信小程序前端传来的用户信息，更新到服务端用户记录
+    需要在Header中提供有效的JWT Token: Authorization: Bearer {token}
     
-    - 需要在Header中携带有效的JWT Token
-    - 用户信息来自微信开放数据
+    返回用户基本信息(昵称、头像等)和积分数据
     """
     trace_key = request_ctx.get_trace_key()
-    user_id = user_data.get("user_id")
+    
+    # 处理Bearer token格式
+    if token.startswith("Bearer "):
+        token = token[7:]
     
     try:
-        result = await wechat_service.update_user_info(
-            user_id, 
-            user_info.dict(exclude_unset=True),
-            db
+        # 1. 验证Token并获取用户信息
+        user_data = await wechat_service.verify_token(token, db)
+        user_id = user_data.get("user_id")
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="无效的用户Token")
+        
+        # 2. 获取用户详细信息
+        user_info = {}
+        try:
+            # 从数据库中获取用户的详细信息
+            user = await wechat_service._get_user_by_id(user_id, db)
+            if user:
+                user_info = {
+                    "user_id": str(user.id),
+                    "nickname": user.nick_name,
+                    "avatar": user.avatar,
+                    "gender": user.gender,
+                    "country": user.country,
+                    "province": user.province,
+                    "city": user.city,
+                    "is_authorized": user.is_authorized
+                }
+            else:
+                logger.warning(
+                    f"找不到用户记录: {user_id}",
+                    extra={"request_id": trace_key, "user_id": user_id}
+                )
+                # 提供基本信息
+                user_info = {
+                    "user_id": user_id,
+                    "nickname": "微信用户",
+                    "avatar": "",
+                    "is_authorized": False
+                }
+        except Exception as e:
+            logger.error(
+                f"获取用户信息失败: {str(e)}",
+                extra={"request_id": trace_key, "user_id": user_id},
+                exc_info=True
+            )
+            # 提供基本信息不中断流程
+            user_info = {
+                "user_id": user_id,
+                "nickname": "微信用户",
+                "avatar": "",
+                "is_authorized": False
+            }
+        
+        # 3. 获取用户积分信息
+        points_info = {}
+        try:
+            points_info = await points_service.get_user_points(user_id, db)
+            logger.info(
+                f"用户积分获取成功: {user_id}",
+                extra={
+                    "request_id": trace_key,
+                    "user_id": user_id,
+                    "available_points": points_info.get("available_points", 0)
+                }
+            )
+        except Exception as e:
+            logger.error(
+                f"获取用户积分失败: {str(e)}",
+                extra={"request_id": trace_key, "user_id": user_id},
+                exc_info=True
+            )
+            # 提供默认积分信息不中断流程
+            points_info = {
+                "available_points": 0,
+                "total_points": 0,
+                "frozen_points": 0,
+                "used_points": 0,
+                "expired_points": 0,
+                "expiring_soon": []
+            }
+        
+        # 4. 构建返回结果
+        result = {
+            "userInfo": user_info,
+            "points": {
+                "available": points_info.get("available_points", 0),
+                "total": points_info.get("total_points", 0),
+                "frozen": points_info.get("frozen_points", 0),
+                "used": points_info.get("used_points", 0),
+                "expired": points_info.get("expired_points", 0),
+                "expiring_soon": points_info.get("expiring_soon", [])
+            }
+        }
+        
+        logger.info(
+            f"获取用户信息和积分成功: {user_id}",
+            extra={"request_id": trace_key, "user_id": user_id}
         )
         
         return BaseResponse(
             code=200,
-            message="用户信息更新成功",
+            message="获取用户信息成功",
             data=result
         )
+        
     except WechatError as e:
-        logger.error(f"更新用户信息失败: {str(e)}", 
-                     extra={"request_id": trace_key})
-        raise CustomException(
-            status_code=400,
-            message=f"更新用户信息失败: {str(e)}",
-            code="wechat_user_update_error"
+        logger.error(
+            f"微信Token验证失败: {str(e)}", 
+            extra={"request_id": trace_key}
         )
+        raise HTTPException(status_code=401, detail=f"Token验证失败: {str(e)}")
+        
+    except Exception as e:
+        logger.error(
+            f"获取用户信息时出现未知错误: {str(e)}", 
+            exc_info=True, 
+            extra={"request_id": trace_key}
+        )
+        raise HTTPException(status_code=500, detail=f"服务器内部错误: {str(e)}")
 
 
 @router.post(
