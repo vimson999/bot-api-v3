@@ -1,3 +1,5 @@
+# src/bot_api_v1/app/models/meta_user.py (更新版)
+
 """
 MetaUser model module for user management across multiple platforms.
 """
@@ -6,8 +8,8 @@ import uuid
 from datetime import datetime
 from typing import Any, ClassVar, Dict, List, Optional
 
-from sqlalchemy import CHAR, VARCHAR, CheckConstraint, Text
-from sqlalchemy.dialects.postgresql import TEXT, UUID
+from sqlalchemy import CHAR, VARCHAR, Boolean, CheckConstraint, Integer, Text
+from sqlalchemy.dialects.postgresql import TEXT, TIMESTAMP, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 
 from bot_api_v1.app.security.crypto.base import decrypt_data, encrypt_data
@@ -97,13 +99,75 @@ class MetaUser(Base):
         comment="Region code (e.g., country or city code)"
     )
     
-    # Relationships - commented out until RelUserGroup model is defined
-    # groups = relationship(
-    #     "RelUserGroup", 
-    #     back_populates="user", 
-    #     cascade="all, delete-orphan",
-    #     lazy="dynamic"
-    # )
+    # 新增字段 - 微信小程序用户所需
+    last_login_at: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        comment="User's last login time"
+    )
+    
+    login_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        comment="User's login count"
+    )
+    
+    country: Mapped[Optional[str]] = mapped_column(
+        VARCHAR(50),
+        nullable=True,
+        comment="User's country"
+    )
+    
+    province: Mapped[Optional[str]] = mapped_column(
+        VARCHAR(50),
+        nullable=True,
+        comment="User's province"
+    )
+    
+    city: Mapped[Optional[str]] = mapped_column(
+        VARCHAR(50),
+        nullable=True,
+        comment="User's city"
+    )
+    
+    language: Mapped[Optional[str]] = mapped_column(
+        VARCHAR(20),
+        nullable=True,
+        comment="User's preferred language"
+    )
+    
+    _phone_number: Mapped[Optional[str]] = mapped_column(
+        "phone_number",
+        VARCHAR(20),
+        nullable=True,
+        comment="Encrypted user's phone number"
+    )
+    
+    is_authorized: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        comment="Whether the user has authorized to get more information"
+    )
+    
+    auth_time: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        comment="Time when user authorized to get information"
+    )
+    
+    last_active_time: Mapped[Optional[datetime]] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=True,
+        comment="User's last active time"
+    )
+    
+    wx_app_id: Mapped[Optional[str]] = mapped_column(
+        VARCHAR(50),
+        nullable=True,
+        comment="WeChat Mini Program ID the user comes from"
+    )
     
     # Property for encrypted open_id
     @property
@@ -120,6 +184,22 @@ class MetaUser(Base):
             self._open_id = None
         else:
             self._open_id = encrypt_data(value)
+    
+    # Property for encrypted phone_number
+    @property
+    def phone_number(self) -> Optional[str]:
+        """Get decrypted phone_number."""
+        if self._phone_number is None:
+            return None
+        return decrypt_data(self._phone_number)
+    
+    @phone_number.setter
+    def phone_number(self, value: Optional[str]) -> None:
+        """Set encrypted phone_number."""
+        if value is None:
+            self._phone_number = None
+        else:
+            self._phone_number = encrypt_data(value)
     
     # Validators
     @validates('scope')
