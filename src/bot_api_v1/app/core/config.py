@@ -73,6 +73,12 @@ class Settings(BaseSettings):
         "debug_pack_id_1742102777762"
     ).split(",")
 
+
+    WECHAT_MINI_APPID: str = os.getenv("WECHAT_MINI_APPID", "")
+    WECHAT_MINI_SECRET: str = os.getenv("WECHAT_MINI_SECRET", "")
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(32))
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRATION_DAYS: int = int(os.getenv("JWT_EXPIRATION_DAYS", "7"))
     
     class Config:
         env_file = ".env"

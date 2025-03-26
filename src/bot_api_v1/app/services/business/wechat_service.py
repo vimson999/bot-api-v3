@@ -412,6 +412,7 @@ class WechatService:
         stmt = select(MetaUser).where(
             and_(
                 MetaUser._open_id == openid,
+                MetaUser.status == 1,
                 MetaUser.scope == PlatformScopeEnum.WECHAT.value
             )
         )
@@ -427,12 +428,21 @@ class WechatService:
         
         # 2. 创建新用户
         new_user = MetaUser(
-            scope=PlatformScopeEnum.WECHAT.value,
+            scope=PlatformScopeEnum.WECHAT.value,  # 平台范围：微信
             open_id=openid,  # 会自动加密
+            only_id=openid,  # 平台内唯一ID
+            nick_name="微信用户",  # 默认昵称
+            gender=0,  # 默认性别：未知
+            avatar="",  # 默认空头像
             status=1,  # 活跃状态
-            login_count=1,
-            last_login_at=datetime.now(),
-            wx_app_id=self.appid
+            login_count=1,  # 首次登录
+            last_login_at=datetime.now(),  # 登录时间
+            last_active_time=datetime.now(),  # 最后活跃时间
+            is_authorized=False,  # 默认未授权获取用户信息
+            wx_app_id=self.appid,  # 微信小程序ID
+            sort=0,  # 默认排序值
+            description="微信小程序用户",  # 描述信息
+            memo=f"通过code2session接口创建于{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"  # 备注信息
         )
         
         db.add(new_user)

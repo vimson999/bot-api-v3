@@ -20,6 +20,7 @@ from bot_api_v1.app.api.routers import script
 from bot_api_v1.app.api.routers import douyin  # 导入新的抖音路由
 
 from bot_api_v1.app.monitoring import setup_metrics, metrics_middleware, start_system_metrics_collector
+from bot_api_v1.app.api.routers import wechat  # Import the wechat router
 
 def create_app():
     """创建并配置FastAPI应用"""
@@ -69,7 +70,8 @@ def create_app():
     app.include_router(api_router, prefix=settings.API_PREFIX)
     app.include_router(script.router, prefix="/script")
     app.include_router(douyin.router, prefix="/douyin")  # 添加抖音路由
-    
+    app.include_router(wechat.router, prefix="/wechat")
+
     # 添加新的媒体路由
     from bot_api_v1.app.api.routers import media
     app.include_router(media.router, prefix="/media")
