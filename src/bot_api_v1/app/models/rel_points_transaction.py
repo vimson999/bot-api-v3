@@ -155,10 +155,16 @@ class RelPointsTransaction(Base):
         comment="创建时间"
     )
     
+    from .meta_order import MetaOrder
+
+
     # 关联关系
     user = relationship("MetaUser", back_populates="points_transactions")
     account = relationship("MetaUserPoints", back_populates="transactions")
     order = relationship("MetaOrder", back_populates="points_transactions")
+    # order = relationship("MetaOrder", back_populates="transactions")
+
+
     product = relationship("MetaProduct", back_populates="points_transactions")
     package = relationship("RelProductPackage", back_populates="points_transactions")
     api_key = relationship("MetaAuthKey", back_populates="points_transactions")

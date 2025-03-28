@@ -64,6 +64,14 @@ class MetaUser(Base):
         index=True,
         comment="Platform scope (wx, xhs, web, mobile)"
     )
+
+    points_account = relationship("MetaUserPoints", back_populates="user", uselist=False)
+
+    # 添加缺失的 points_transactions 关系
+    points_transactions = relationship("RelPointsTransaction", back_populates="user")
+    # 添加 orders 关系
+    orders = relationship("MetaOrder", back_populates="user")
+
     uni_id: Mapped[Optional[str]] = mapped_column(
         TEXT, 
         nullable=True,
