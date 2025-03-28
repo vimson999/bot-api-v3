@@ -47,13 +47,13 @@ media_service = MediaService()
 )
 @TollgateConfig(
     title="提取媒体内容",
-    type="media_extract",
-    base_tollgate="20",
+    type="media",
+    base_tollgate="10",
     current_tollgate="1",
     plat="api"
 )
-@require_feishu_signature(exempt=True)  # 添加飞书签名验证，测试模式可豁免
-@require_auth_key(exempt=True)  # 添加授权密钥验证，测试模式可豁免
+@require_feishu_signature()  # 添加飞书签名验证，测试模式可豁免
+@require_auth_key()  # 添加授权密钥验证，测试模式可豁免
 async def extract_media_content(
     request: Request,
     extract_request: MediaExtractRequest,

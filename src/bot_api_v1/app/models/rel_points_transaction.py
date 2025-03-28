@@ -155,7 +155,7 @@ class RelPointsTransaction(Base):
         comment="创建时间"
     )
     
-    from .meta_order import MetaOrder
+    # from .meta_order import MetaOrder
 
 
     # 关联关系
@@ -167,8 +167,10 @@ class RelPointsTransaction(Base):
 
     product = relationship("MetaProduct", back_populates="points_transactions")
     package = relationship("RelProductPackage", back_populates="points_transactions")
-    api_key = relationship("MetaAuthKey", back_populates="points_transactions")
-    
+    # api_key = relationship("MetaAuthKey", back_populates="points_transactions")
+    api_key = relationship("MetaAuthKey")  # 删除 back_populates 参数
+
+
     def __repr__(self) -> str:
         """积分交易记录的字符串表示"""
         return f"<RelPointsTransaction(id='{self.id}', transaction_no='{self.transaction_no}', points_change='{self.points_change}')>"

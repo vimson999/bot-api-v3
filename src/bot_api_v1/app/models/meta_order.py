@@ -1,12 +1,21 @@
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List, TYPE_CHECKING
 
 from sqlalchemy import VARCHAR, CheckConstraint, Text, TIMESTAMP, func, SmallInteger, Numeric, Integer, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
+
+# 使用TYPE_CHECKING解决循环引用问题
+if TYPE_CHECKING:
+    from .meta_product import MetaProduct
+    from .rel_product_package import RelProductPackage
+    from .meta_promotion import MetaPromotion
+    from .meta_user import MetaUser
+    from .log_payment_callback import LogPaymentCallback
+    from .rel_points_transaction import RelPointsTransaction
 
 
 class MetaOrder(Base):
@@ -16,6 +25,9 @@ class MetaOrder(Base):
     记录用户购买商品的订单信息和支付状态
     """
     __tablename__ = "meta_order"
+    
+    # (保持模型定义不变，但移除最后的relationship定义)
+    # 其他字段保持不变...
     
     __table_args__ = (
         CheckConstraint("order_type IN ('POINT', 'PACKAGE', 'SERVICE')", name="valid_order_type"),
@@ -228,14 +240,4 @@ class MetaOrder(Base):
         comment="更新时间"
     )
     
-    # 关联关系
-    user = relationship("MetaUser", back_populates="orders")
-    product = relationship("MetaProduct", back_populates="orders")
-    package = relationship("RelProductPackage", back_populates="orders")
-    promotion = relationship("MetaPromotion", back_populates="orders")
-    payment_callbacks = relationship("LogPaymentCallback", back_populates="order")
-    points_transactions = relationship("RelPointsTransaction", back_populates="order")
-    
-    def __repr__(self) -> str:
-        """订单的字符串表示"""
-        return f"<MetaOrder(id='{self.id}', order_no='{self.order_no}', status='{self.order_status}')>"
+    # 关系将在模型定义后设置
