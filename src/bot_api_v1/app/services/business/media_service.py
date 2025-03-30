@@ -6,7 +6,8 @@ from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.utils.decorators.log_service_call import log_service_call
 from bot_api_v1.app.core.cache import cache_result
-from bot_api_v1.app.services.business.douyin_service import DouyinService, DouyinError
+# from bot_api_v1.app.services.business.douyin_service import DouyinService, DouyinError
+from bot_api_v1.app.services.business.tiktok_service import TikTokService, TikTokError
 from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
 from bot_api_v1.app.services.business.xhs_service import XHSService
 
@@ -25,7 +26,8 @@ class MediaService:
     
     def __init__(self):
         """初始化服务"""
-        self.douyin_service = DouyinService()
+        # self.douyin_service = DouyinService()
+        self.tiktok_service = TikTokService()
         self.xhs_service = XHSService()  # 使用新的XHSService
     
     def identify_platform(self, url: str) -> str:
@@ -85,7 +87,7 @@ class MediaService:
         except Exception as e:
             error_msg = f"处理媒体内容时出错: {str(e)}"
             logger.error(error_msg, exc_info=True, extra={"request_id": trace_key})
-            if isinstance(e, (DouyinError, MediaError)):
+            if isinstance(e, (TikTokError, MediaError)):
                 raise MediaError(error_msg) from e
             raise MediaError(f"未知错误: {error_msg}") from e
     
@@ -95,8 +97,10 @@ class MediaService:
         logger.info(f"处理抖音内容: {url}", extra={"request_id": trace_key})
         
         # 调用抖音服务获取视频信息
-        video_info = await self.douyin_service.get_video_info(url, extract_text=extract_text)
-        
+        # video_info = await self.douyin_service.get_video_info(url, extract_text=extract_text)
+        video_info = await self.tiktok_service.get_video_info(url, extract_text=extract_text)
+        # video_info = {}
+
         # 转换为统一结构
         result = {
             "platform": MediaPlatform.DOUYIN,
