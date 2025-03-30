@@ -1,14 +1,17 @@
 import uuid
 import json
 from functools import wraps
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, Union
+from datetime import datetime, timedelta
 
 from fastapi import Header, HTTPException, Depends, Request, status
-from sqlalchemy import select, update, and_, func
+from sqlalchemy import select, update, and_, func, insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime
+from sqlalchemy.exc import SQLAlchemyError
 
 from bot_api_v1.app.models.meta_auth_key import MetaAuthKey
+from bot_api_v1.app.models.meta_user_points import MetaUserPoints
+from bot_api_v1.app.models.rel_points_transaction import RelPointsTransaction
 from bot_api_v1.app.db.session import get_db, async_session_maker
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
@@ -35,7 +38,6 @@ def require_auth_key(exempt: bool = False):
             need_close = False
             key_obj = None  # 在函数开始时初始化
             trace_key = request_ctx.get_trace_key()
-
 
             # 步骤1：获取请求对象
             request = _extract_request_object(args, kwargs)
@@ -69,35 +71,34 @@ def require_auth_key(exempt: bool = False):
                     )
                 
                 # 步骤6：检查密钥状态
-                from datetime import datetime, timezone
-                now = datetime.now(timezone.utc)
+                now = datetime.now()
                 
                 # 检查过期状态
                 if await _check_key_expired(db, request, key_obj, now, exempt):
                     return await func(*args, **kwargs) if exempt else None
                 
-                # 检查调用次数限制
-                if await _check_call_limit_exceeded(db, request, key_obj, now, exempt):
+                # 步骤7：检查用户积分
+                if await _check_user_points(db, request, key_obj, exempt):
                     return await func(*args, **kwargs) if exempt else None
                 
-                # 步骤7：执行原始函数
+                # 步骤8：执行原始函数
                 result = await func(*args, **kwargs)
                 
-                # 步骤8：检查调用是否成功
+                # 步骤9：检查调用是否成功
                 is_successful = _check_api_call_success(result)
                 
-                # 步骤9：只有在成功时才更新调用次数
+                # 步骤10：只有在成功时才扣减积分
                 if is_successful and db and key_obj:
-                    await _update_call_count(db, key_obj)
-                    logger.info(f"API调用成功，扣除调用次数: {key_obj.key_value}")
+                    await _update_user_points(db, key_obj, request)
+                    logger.info(f"API调用成功，执行积分扣减")
                 elif not is_successful:
-                    logger.info(f"API调用返回业务失败，不扣除调用次数: {key_obj.key_value if key_obj else 'unknown'}")
+                    logger.info(f"API调用返回业务失败，不扣除积分")
                 
                 # 返回原始函数的结果
                 return result
             except Exception as e:
-                # 函数执行失败，记录错误但不扣除调用次数
-                logger.error(f"API执行异常，不扣除调用次数: {str(e)}", exc_info=True)
+                # 函数执行失败，记录错误但不扣除积分
+                logger.error(f"API执行异常，不扣除积分: {str(e)}", exc_info=True)
                 raise
             finally:
                 # 无论成功失败，都存储认证信息和清理资源
@@ -247,122 +248,202 @@ async def _check_key_expired(db: AsyncSession, request: Request, key_obj: MetaAu
         return True
 
 
-async def _check_call_limit_exceeded(db: AsyncSession, request: Request, key_obj: MetaAuthKey,
-                                   now: datetime, exempt: bool) -> bool:
-    """检查密钥调用次数是否超限，如果超限则更新记录"""
-    if key_obj.call_limit <= 0 or key_obj.call_count < key_obj.call_limit:
-        return False
+async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAuthKey, exempt: bool) -> bool:
+    """检查用户积分是否存在
     
-    # 调用次数已超限，收集详细信息
-    context = _get_request_context(request, now)
-    user_agent = request.headers.get("User-Agent", "unknown")
-    referer = request.headers.get("Referer", "none")
+    这个函数仅检查用户是否有积分账户，不检查具体的积分数量。
+    具体的积分扣减验证会在业务处理过程中进行。
     
-    # 构建详细的安全日志信息
-    security_log = {
-        "event": "api_key_limit_exceeded",
-        "key_value": key_obj.key_value,
-        "key_id": str(key_obj.id),
-        "app_id": str(key_obj.app_id) if key_obj.app_id else None,
-        "user_id": str(key_obj.user_id) if key_obj.user_id else None,
-        "time": context['time_str'],
-        "trace_id": context['trace_id'],
-        "path": context['path'],
-        "method": context['method'],
-        "ip_address": context['client_ip'],
-        "user_agent": user_agent,
-        "referer": referer,
-        "call_count": key_obj.call_count,
-        "call_limit": key_obj.call_limit
-    }
-    
-    # 记录详细日志
-    logger.warning(
-        f"安全警告: 授权密钥调用次数超限: {key_obj.key_value}, IP: {context['client_ip']}, "
-        f"路径: {context['method']} {context['path']}, "
-        f"调用次数: {key_obj.call_count}/{key_obj.call_limit}",
-        extra={"security_event": security_log}
-    )
-    
-    # 更新数据库记录，添加安全事件信息
-    security_note = (
-        f"安全警告: 密钥超出调用限制。时间: {context['time_str']}, "
-        f"请求ID: {context['trace_id']}, 路径: {context['method']} {context['path']}, "
-        f"IP: {context['client_ip']}, User-Agent: {user_agent[:100]}..."
-    )
+    Args:
+        db: 数据库会话
+        request: 请求对象
+        key_obj: 认证密钥对象
+        exempt: 是否豁免验证
+        
+    Returns:
+        bool: 如果需要中止请求处理则返回True，否则返回False
+    """
+    # 获取用户ID
+    user_id = key_obj.user_id
+    if not user_id:
+        error_msg = "API密钥未关联任何用户账户，无法处理积分"
+        logger.error(error_msg)
+        if not exempt:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=error_msg
+            )
+        return True
     
     try:
-        # 尝试记录安全事件到数据库
-        await _update_security_event(db, key_obj, security_note, security_log, now)
+        # 查询用户积分账户
+        stmt = select(MetaUserPoints).where(
+            and_(
+                MetaUserPoints.user_id == user_id,
+                MetaUserPoints.status == 1
+            )
+        )
+        result = await db.execute(stmt)
+        points_account = result.scalar_one_or_none()
+        
+        # 如果用户没有积分账户，创建一个
+        if not points_account:
+            logger.info(f"用户积分账户不存在，正在创建: {user_id}")
+            
+            # 创建积分账户
+            points_account = MetaUserPoints(
+                user_id=user_id,
+                total_points=0,
+                available_points=0,
+                frozen_points=0,
+                used_points=0,
+                expired_points=0,
+                status=1
+            )
+            db.add(points_account)
+            await db.commit()
+            await db.refresh(points_account)
+            
+            logger.info(f"已创建用户积分账户: {points_account.id}")
+            
+            # 如果账户余额为0，提示用户充值
+            error_msg = "您的积分账户余额为0，请先充值后再使用服务"
+            logger.warning(error_msg)
+            if not exempt:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=error_msg
+                )
+            return True
+        
+        # 如果账户余额为0，提示用户充值
+        if points_account.available_points <= 0:
+            error_msg = "您的积分账户余额不足，请先充值后再使用服务"
+            logger.warning(error_msg)
+            if not exempt:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail=error_msg
+                )
+            return True
+        
+        # 将积分信息存入上下文
+        request_ctx.set_points_info(
+            account_id=str(points_account.id),
+            available_points=points_account.available_points,
+            user_id=str(user_id)
+        )
+        
+        logger.info(f"用户积分账户正常: ID={points_account.id}, 可用积分={points_account.available_points}")
+        return False
+        
+    except HTTPException:
+        # 直接重新抛出HTTP异常
+        raise
+    except Exception as e:
+        error_msg = f"检查用户积分失败: {str(e)}"
+        logger.error(error_msg, exc_info=True)
         
         if not exempt:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="API调用次数已达上限"
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="检查用户积分时发生错误"
             )
-        
-        return True
-    except HTTPException:
-        # 如果是我们自己抛出的HTTPException，直接重新抛出
-        raise
-    except Exception as e:
-        logger.error(f"记录调用次数超限事件失败: {str(e)}", exc_info=True)
-        
-        if not exempt:
-            raise HTTPException(status_code=500, detail="处理调用限制时出错")
-        
         return True
 
 
-async def _update_security_event(db: AsyncSession, key_obj: MetaAuthKey, 
-                               security_note: str, security_log: Dict[str, Any],
-                               now: datetime):
-    """更新数据库中的安全事件记录"""
+async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: Request) -> bool:
+    """更新用户积分，执行积分扣减
+    
+    Args:
+        db: 数据库会话
+        key_obj: 认证密钥对象
+        request: 请求对象
+    
+    Returns:
+        bool: 操作是否成功
+    """
+    # 获取积分信息
+    points_info = request_ctx.get_points_info()
+    consumed_points = points_info.get('consumed_points', 0)
+    account_id = points_info.get('account_id')
+    available_points = points_info.get('available_points', 0)
+    user_id = points_info.get('user_id')
+    api_name = points_info.get('api_name', "未知API")
+    
+    # 如果没有积分消耗或缺少账户ID，跳过处理
+    if not consumed_points or not account_id or not user_id:
+        logger.info(f"无需扣减积分: consumed_points={consumed_points}, account_id={account_id}")
+        return False
+    
+    # 不能消耗超过用户可用积分
+    if consumed_points > available_points:
+        logger.warning(f"消耗积分({consumed_points})超过可用积分({available_points})，将限制为可用积分")
+        consumed_points = available_points
+    
     try:
-        # 构造security_events数组的JSON字符串
-        security_event_json = json.dumps([security_log])
+        # 获取请求路径和IP
+        api_path = request.url.path
+        client_ip = request.client.host if hasattr(request, "client") else "unknown"
+        request_id = getattr(request.state, "trace_key", request_ctx.get_trace_key())
         
-        # 更新记录
-        await db.execute(
-            update(MetaAuthKey)
-            .where(MetaAuthKey.id == key_obj.id)
-            .values(
-                note=func.concat_ws('\n', MetaAuthKey.note, security_note) if key_obj.note else security_note,
-                updated_at=now,
-                # 更新metadata中的security_events数组
-                key_metadata=func.jsonb_set(
-                    func.coalesce(MetaAuthKey.key_metadata, '{}'),
-                    '{security_events}',
-                    func.coalesce(
-                        func.jsonb_path_query_array(
-                            func.coalesce(MetaAuthKey.key_metadata, '{}'), 
-                            '$.security_events[*]'
-                        ),
-                        '[]'
-                    ) + security_event_json
+        # 转换UUID字符串为UUID对象
+        try:
+            account_uuid = uuid.UUID(account_id)
+            user_uuid = uuid.UUID(user_id)
+        except ValueError as e:
+            logger.error(f"无效的UUID格式: {e}")
+            return False
+        
+        # 事务处理
+        async with db.begin():
+            # 1. 更新用户积分账户
+            update_result = await db.execute(
+                update(MetaUserPoints)
+                .where(MetaUserPoints.id == account_uuid)
+                .values(
+                    available_points=MetaUserPoints.available_points - consumed_points,
+                    used_points=MetaUserPoints.used_points + consumed_points,
+                    last_consume_time=datetime.now()
                 )
             )
-        )
-        await db.commit()
-    except Exception as e:
-        logger.error(f"更新安全事件记录失败: {str(e)}", exc_info=True)
+            
+            if update_result.rowcount == 0:
+                logger.error(f"更新积分账户失败: 找不到ID为 {account_id} 的账户")
+                return False
+                
+            # 2. 生成交易编号
+            transaction_no = f"TX{int(time.time())}{str(uuid.uuid4())[-12:]}"
+            
+            # 3. 创建积分交易记录
+            transaction = RelPointsTransaction(
+                transaction_no=transaction_no,
+                user_id=user_uuid,
+                account_id=account_uuid,
+                points_change=-consumed_points,  # 负值表示消费
+                remaining_points=available_points - consumed_points,
+                transaction_type="CONSUME",
+                transaction_status=1,  # 成功
+                api_name=api_name,
+                api_path=api_path,
+                request_id=request_id,
+                expire_time=datetime.now() + timedelta(days=365),  # 默认一年后过期
+                remark=f"API调用消费: {api_name}",
+                client_ip=client_ip
+            )
+            db.add(transaction)
+        
+        logger.info(f"积分扣减成功: 用户 {user_id}, 消耗 {consumed_points} 积分, 剩余 {available_points - consumed_points} 积分")
+        return True
+        
+    except SQLAlchemyError as e:
+        logger.error(f"积分扣减数据库错误: {str(e)}", exc_info=True)
         await db.rollback()
-        raise
-
-
-async def _update_call_count(db: AsyncSession, key_obj: MetaAuthKey):
-    """更新密钥的调用次数"""
-    try:
-        await db.execute(
-            update(MetaAuthKey)
-            .where(MetaAuthKey.id == key_obj.id)
-            .values(call_count=MetaAuthKey.call_count + 1)
-        )
-        await db.commit()
+        return False
     except Exception as e:
-        logger.error(f"更新调用次数失败: {str(e)}", exc_info=True)
+        logger.error(f"积分扣减未知错误: {str(e)}", exc_info=True)
         await db.rollback()
-        raise HTTPException(status_code=500, detail="更新调用记录失败")
+        return False
 
 
 def _store_auth_info(request: Request, key_obj: MetaAuthKey):

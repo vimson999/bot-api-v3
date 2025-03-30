@@ -635,3 +635,13 @@ pip install -r requirements.txt
 
 cd src/bot_api_v1/libs/spider_xhs
 npm install
+
+
+
+git submodule add https://github.com/vimson999/TikTokDownloader.git src/bot_api_v1/libs/tiktok_downloader
+git submodule update --init --recursive
+
+cat src/bot_api_v1/libs/tiktok_downloader/requirements.txt >> requirements.txt
+pip install -r requirements.txt
+
+pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt

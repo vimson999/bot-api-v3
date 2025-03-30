@@ -182,7 +182,7 @@ class ScriptService:
         
         Args:
             audio_path: 音频文件路径
-            
+                
         Returns:
             str: 转写后的文本
             
@@ -198,9 +198,6 @@ class ScriptService:
         logger.info(f"transcribe_audio-开始转写音频: {audio_path}", extra={"request_id": trace_key})
         start_time = time.time()
         
-        # 加载模型
-        model = self._get_whisper_model()
-        
         # 音频分割和并行转写
         text = ""
         temp_chunk_paths = []
@@ -212,8 +209,33 @@ class ScriptService:
             
             logger.info(f"音频时长: {audio_duration:.2f}秒", extra={"request_id": trace_key})
             
-            if audio_duration <= 1800:  # 3分钟以内直接转写
-                logger.info("音频时长小于3分钟，直接转写", extra={"request_id": trace_key})
+            # 计算所需积分：按时长计算，每60秒10分，不足60秒按10分计算
+            required_points = 0  # 不额外计算基础消耗
+            duration_seconds = int(audio_duration)
+            duration_points = (duration_seconds // 60) * 10  # 完整分钟数
+            if duration_seconds % 60 > 0:
+                duration_points += 10  # 不足60秒的部分也算10分
+
+            total_required = duration_points  # 总积分就是时长积分
+            
+            # 从上下文获取积分信息
+            points_info = request_ctx.get_points_info()
+            available_points = points_info.get('available_points', 0)
+            
+            # 验证积分是否足够
+            if available_points < total_required:
+                error_msg = f"积分不足: 处理该音频(时长 {duration_seconds} 秒)需要 {total_required} 积分（基础：{required_points}，时长：{duration_points}），您当前仅有 {available_points} 积分"
+                logger.warning(error_msg, extra={"request_id": trace_key})
+                raise AudioTranscriptionError(error_msg)
+            
+            logger.info(f"积分检查通过：所需 {total_required} 积分，可用 {available_points} 积分", 
+                    extra={"request_id": trace_key})
+            
+            # 加载模型
+            model = self._get_whisper_model()
+            
+            if audio_duration <= 1800:  # 30分钟以内直接转写
+                logger.info("音频时长小于30分钟，直接转写", extra={"request_id": trace_key})
                 result = model.transcribe(audio_path)
                 text = result.get("text", "").strip()
                 
@@ -262,13 +284,21 @@ class ScriptService:
             elapsed_time = time.time() - start_time
             logger.info(f"音频转写完成，耗时: {elapsed_time:.2f}秒", extra={"request_id": trace_key})
             
+            # 设置消耗的积分
+            request_ctx.set_consumed_points(total_required, "音频转写服务")
+            
             return text
             
+        except AudioTranscriptionError:
+            # 重新抛出自定义错误，不消耗积分
+            request_ctx.set_consumed_points(0)
+            raise
         except Exception as e:
+            # 确保失败时不消耗积分
+            request_ctx.set_consumed_points(0)
             error_msg = f"音频转写失败: {str(e)}"
             logger.error(error_msg, exc_info=True, extra={"request_id": trace_key})
             raise AudioTranscriptionError(error_msg) from e
-            
         finally:
             # 清理临时音频片段
             for chunk_path in temp_chunk_paths:
