@@ -1,4 +1,8 @@
 from fastapi import APIRouter, Depends
+
+from fastapi import FastAPI, Request, Query, HTTPException
+from fastapi.responses import PlainTextResponse, Response
+
 from bot_api_v1.app.core.schemas import BaseResponse
 from bot_api_v1.app.db.session import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +12,12 @@ from bot_api_v1.app.utils.decorators.tollgate import TollgateConfig
 import os
 import time
 import torch  # 如果需要检查音频服务
+from bot_api_v1.app.core.config import settings 
+from bot_api_v1.app.services.business.wechat_service import WechatService
+import xml.etree.ElementTree as ET
+from typing import Dict, Optional
+import requests
+
 
 router = APIRouter(tags=["System Monitoring"])
 
@@ -81,3 +91,4 @@ async def health_check(
             **system_info
         }
     )
+

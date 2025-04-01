@@ -204,8 +204,25 @@ async def _check_key_expired(db: AsyncSession, request: Request, key_obj: MetaAu
                             now: datetime, exempt: bool) -> bool:
     
     """检查密钥是否已过期，如果已过期则更新状态"""
-    if not key_obj.expired_at or now <= key_obj.expired_at:
+    # 确保比较的两个时间对象类型一致
+    if not key_obj.expired_at:
         return False
+        
+    # 检查是否为带时区的日期时间
+    if key_obj.expired_at.tzinfo is not None and now.tzinfo is None:
+        # 如果expired_at有时区而now没有，将now转换为naive
+        expired_at_naive = key_obj.expired_at.replace(tzinfo=None)
+        if now <= expired_at_naive:
+            return False
+    elif key_obj.expired_at.tzinfo is None and now.tzinfo is not None:
+        # 如果now有时区而expired_at没有，将expired_at转换为aware
+        now_naive = now.replace(tzinfo=None)
+        if now_naive <= key_obj.expired_at:
+            return False
+    else:
+        # 两者时区状态一致，直接比较
+        if now <= key_obj.expired_at:
+            return False
     
     # 密钥已过期，构建详细信息
     context = _get_request_context(request, now)

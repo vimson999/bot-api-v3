@@ -645,3 +645,7 @@ cat src/bot_api_v1/libs/tiktok_downloader/requirements.txt >> requirements.txt
 pip install -r requirements.txt
 
 pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+
+
+https://www.douyin.com/video/7475254041207950642
+https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed

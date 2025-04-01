@@ -81,7 +81,7 @@ class MetaUser(Base):
         "open_id",
         TEXT, 
         nullable=True,
-        comment="Encrypted platform-specific open ID"
+        comment="Platform-specific open ID"
     )
     
     # Basic information
@@ -92,7 +92,7 @@ class MetaUser(Base):
         comment="User's nickname or display name"
     )
     gender: Mapped[Optional[int]] = mapped_column(
-        CHAR(1), 
+        Integer,  # 修改为Integer类型，匹配数据库中的smallint类型
         nullable=True,
         comment="User gender: 0=unknown, 1=male, 2=female"
     )
@@ -177,21 +177,16 @@ class MetaUser(Base):
         comment="WeChat Mini Program ID the user comes from"
     )
     
-    # Property for encrypted open_id
+        # Property for open_id
     @property
     def open_id(self) -> Optional[str]:
-        """Get decrypted open_id."""
-        if self._open_id is None:
-            return None
-        return decrypt_data(self._open_id)
+        """Get open_id."""
+        return self._open_id
     
     @open_id.setter
     def open_id(self, value: Optional[str]) -> None:
-        """Set encrypted open_id."""
-        if value is None:
-            self._open_id = None
-        else:
-            self._open_id = encrypt_data(value)
+        """Set open_id."""
+        self._open_id = value
     
     # Property for encrypted phone_number
     @property
@@ -232,7 +227,7 @@ class MetaUser(Base):
             name="valid_scope"
         ),
         CheckConstraint(
-            "gender IS NULL OR gender IN ('0','1','2')", 
+            "gender IS NULL OR gender IN (0,1,2)",  # 修改为整数类型的检查
             name="valid_gender"
         ),
         CheckConstraint(

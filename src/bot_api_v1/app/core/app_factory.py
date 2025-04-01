@@ -19,7 +19,7 @@ from bot_api_v1.app.middlewares.rate_limit import RateLimitMiddleware
 from bot_api_v1.app.api.routers import script
 # from bot_api_v1.app.api.routers import douyin  # 导入新的抖音路由
 from bot_api_v1.app.api.routers import points  # 导入新的抖音路由
-
+from bot_api_v1.app.api.routers import wechat_mp  # Import the media route
 
 from bot_api_v1.app.monitoring import setup_metrics, metrics_middleware, start_system_metrics_collector
 from bot_api_v1.app.api.routers import wechat  # Import the wechat router
@@ -74,6 +74,7 @@ def create_app():
     # app.include_router(douyin.router, prefix="/douyin")  # 添加抖音路由
     app.include_router(wechat.router, prefix="/wechat")
     app.include_router(points.router, prefix="/points")
+    app.include_router(wechat_mp.router, prefix="/wechat_mp")
 
     # 添加新的媒体路由
     from bot_api_v1.app.api.routers import media
@@ -111,6 +112,12 @@ def create_app():
             ):
                 logger.error("Cannot connect to database, application may not function properly")
             
+
+            if settings.CURRENT_WECHAT_MP_MENU_VERSION < settings.TARGET_WECHAT_MP_MENU_VERSION:
+                access_token = await wechat_service._get_mp_access_token()
+                await wechat_service.create_wechat_menu(access_token)
+                settings.CURRENT_WECHAT_MP_MENU_VERSION = settings.TARGET_WECHAT_MP_MENU_VERSION
+
             # 初始化数据库
             # await init_db()
             

@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     )
     DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() == "true"
     DB_ECHO_POOL: bool = os.getenv("DB_ECHO_POOL", "false").lower() == "true"
-    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))
-    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "20"))
+    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "30"))
     DB_SCHEMA: str = os.getenv("DB_SCHEMA", "public") 
     DB_STATEMENT_TIMEOUT: int = int(os.getenv("DB_STATEMENT_TIMEOUT", "30000"))  # 30秒
     DB_LOCK_TIMEOUT: int = int(os.getenv("DB_LOCK_TIMEOUT", "5000"))  # 5秒
@@ -73,6 +73,13 @@ class Settings(BaseSettings):
         "debug_pack_id_1742102777762"
     ).split(",")
 
+
+    WECHAT_MP_TOKEN: str = os.getenv("WECHAT_MP_TOKEN", "vims32keyLilymvpabc12")  
+    WECHAT_MP_APPID: str = os.getenv("WECHAT_MP_APPID", "wxd5b92e8f6f424d09")
+    WECHAT_MP_SECRET: str = os.getenv("WECHAT_MP_SECRET", "dd7f200be2e3ddce83a5dffb069b9fa5")
+
+    CURRENT_WECHAT_MP_MENU_VERSION: int = int(os.getenv("CURRENT_WECHAT_MP_MENU_VERSION", "0"))
+    TARGET_WECHAT_MP_MENU_VERSION: int = int(os.getenv("TARGET_WECHAT_MP_MENU_VERSION", "1"))
 
     WECHAT_MINI_APPID: str = os.getenv("WECHAT_MINI_APPID", "")
     WECHAT_MINI_SECRET: str = os.getenv("WECHAT_MINI_SECRET", "")
