@@ -3,13 +3,14 @@
 
 提供微信小程序登录、用户信息解密等功能。
 """
+# 在文件开头整理导入语句
 import json
 import time
 import uuid
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
-import aiohttp  # 添加这行导入
 
+import aiohttp
 import httpx
 import jwt
 from sqlalchemy import select, update, and_
@@ -17,21 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
-from bot_api_v1.app.core.cache import cache_result
+from bot_api_v1.app.core.cache import cache_result, script_cache
 from bot_api_v1.app.utils.decorators.log_service_call import log_service_call
 from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
 from bot_api_v1.app.models.meta_user import MetaUser, PlatformScopeEnum
 from bot_api_v1.app.constants.log_types import LogEventType, LogSource
 from bot_api_v1.app.core.config import settings
-
-from bot_api_v1.app.models.meta_user import MetaUser
-from bot_api_v1.app.core.cache import script_cache
-import json
-import time
-import httpx
-
-from bot_api_v1.app.core.config import settings
-import hashlib
+from bot_api_v1.app.services.business.points_service import PointsService
+from bot_api_v1.app.models.meta_auth_key import MetaAuthKey
+from sqlalchemy import func
 
 
 class WechatError(Exception):
@@ -49,6 +44,9 @@ class WechatService:
         self.token_secret = settings.JWT_SECRET_KEY
         self.token_algorithm = "HS256"
         self.token_expires = 7  # 7天
+
+        self.points_service = PointsService()
+
     
     @gate_keeper()
     @log_service_call(method_type="wechat", tollgate="20-2")
@@ -556,7 +554,12 @@ class WechatService:
         try:
             # 查询数据库中是否存在该openid的用户
             result = await db.execute(
-                select(MetaUser).where(MetaUser.open_id == openid)
+                select(MetaUser).where(
+                    and_(
+                        MetaUser._open_id == openid,  # 使用 _open_id 而不是 open_id
+                        MetaUser.scope == PlatformScopeEnum.WECHAT.value  # 确保是微信用户
+                    )
+                )
             )
             user = result.scalars().first()
             
@@ -579,7 +582,9 @@ class WechatService:
         try:
             # 查询用户
             result = await db.execute(
-                select(MetaUser).where(MetaUser.open_id == openid)
+                select(MetaUser).where(MetaUser._open_id == openid)
+                .where(MetaUser.scope == PlatformScopeEnum.WECHAT.value)
+                .where(MetaUser.status == 1)
             )
             user = result.scalars().first()
             
@@ -612,7 +617,7 @@ class WechatService:
             # 返回用户信息
             return {
                 "user_id": str(user.id),
-                "openid": user.openid,
+                "openid": user.open_id,
                 "nickname": user.nick_name,
                 "avatar": user.avatar,
                 "gender": user.gender,
@@ -746,55 +751,52 @@ class WechatService:
     
     async def _get_mp_access_token(self) -> str:
         """
-        获取微信公众号访问令牌，带缓存和自动刷新机制
+        获取微信公众号访问令牌，使用稳定版接口 (stable_token)
+        
+        包含：
+        - 缓存机制和自动刷新逻辑
+        - 多层次回退策略：缓存旧令牌 -> 备用令牌 -> 报错
         
         Returns:
-            str: 访问令牌
+            str: 微信公众号访问令牌
         """
-
+        cache_key = f"wechat:mp:access_token:{settings.WECHAT_MP_APPID}"
         
         try:
-            # 缓存键名
-            cache_key = f"wechat:mp:access_token:{settings.WECHAT_MP_APPID}"
+            # 尝试从缓存获取令牌
+            token_data = self._get_cached_token(cache_key)
+            if token_data and token_data.get("expires_at", 0) > time.time() + 300:
+                logger.debug("从缓存获取微信公众号访问令牌")
+                return token_data.get("access_token")
             
-            # 尝试从缓存获取
-            cached_token = script_cache.get(cache_key)
-            if cached_token:
-                token_data = cached_token.get('value', {})
-                # 检查是否即将过期（提前5分钟刷新）
-                if token_data.get("expires_at", 0) > time.time() + 300:
-                    logger.debug("从缓存获取微信公众号访问令牌")
-                    return token_data.get("access_token")
+            # 缓存不存在或即将过期，使用稳定版接口重新获取
+            logger.info("使用稳定版接口获取微信公众号访问令牌")
             
-            # 缓存不存在或即将过期，重新获取
-            logger.info("重新获取微信公众号访问令牌")
-            
-            # 构建请求URL
-            url = "https://api.weixin.qq.com/cgi-bin/token"
-            params = {
+            # 构建请求参数 - 使用稳定版接口
+            url = "https://api.weixin.qq.com/cgi-bin/stable_token"
+            payload = {
                 "grant_type": "client_credential",
                 "appid": settings.WECHAT_MP_APPID,
-                "secret": settings.WECHAT_MP_SECRET
+                "secret": settings.WECHAT_MP_SECRET,
+                "force_refresh": False  # 可选参数，避免无必要刷新
             }
             
-            # 发送请求到微信服务器
+            # 发送POST请求到微信服务器
             async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(url, params=params)
+                response = await client.post(url, json=payload)
                 response.raise_for_status()
                 
                 # 解析响应
                 result = response.json()
                 
                 # 检查响应状态
-                if "errcode" in result and result["errcode"] != 0:
+                if "errcode" in result and result.get("errcode", 0) != 0:
                     error_code = result.get("errcode")
                     error_msg = result.get("errmsg", "未知错误")
                     logger.error(f"获取微信公众号访问令牌失败: {error_code} - {error_msg}")
-                    # 如果缓存中有旧令牌，尝试返回旧令牌
-                    if cached_token:
-                        token_data = cached_token.get('value', {})
-                        return token_data.get("access_token")
-                    raise WechatError(f"获取访问令牌失败: {error_code} - {error_msg}")
+                    
+                    # 使用回退策略
+                    return self._fallback_token_strategy(cache_key, error_msg)
                 
                 # 提取访问令牌和过期时间
                 access_token = result.get("access_token")
@@ -802,16 +804,15 @@ class WechatService:
                 
                 if not access_token:
                     logger.error("微信返回的访问令牌为空")
-                    raise WechatError("获取访问令牌失败: 令牌为空")
-                
-                # 计算过期时间戳
-                expires_at = time.time() + expires_in
+                    return self._fallback_token_strategy(cache_key, "令牌为空")
                 
                 # 缓存访问令牌
                 token_data = {
                     "access_token": access_token,
-                    "expires_at": expires_at
+                    "expires_at": time.time() + expires_in
                 }
+                
+                # 缓存时间设置为令牌有效期减去5分钟，避免使用临近过期的令牌
                 script_cache.set(
                     cache_key,
                     token_data,
@@ -823,11 +824,38 @@ class WechatService:
                 
         except Exception as e:
             logger.error(f"获取微信访问令牌时出错: {str(e)}", exc_info=True)
-            # 如果有配置的备用令牌，返回备用令牌
-            if hasattr(settings, "WECHAT_MP_ACCESS_TOKEN_FALLBACK"):
-                logger.warning("使用备用访问令牌")
-                return settings.WECHAT_MP_ACCESS_TOKEN_FALLBACK
-            raise WechatError(f"获取微信访问令牌时出错: {str(e)}")
+            return self._fallback_token_strategy(cache_key, str(e))
+        
+    def _get_cached_token(self, cache_key):
+        """从缓存中安全地获取令牌数据"""
+        cached = script_cache.get(cache_key)
+        if not cached:
+            return None
+            
+        # 处理不同格式的缓存数据
+        if isinstance(cached, dict):
+            if "access_token" in cached:
+                return cached
+            elif "value" in cached and isinstance(cached["value"], dict):
+                return cached["value"]
+        
+        return None
+        
+    def _fallback_token_strategy(self, cache_key, error_msg):
+        """统一处理令牌获取失败的回退策略"""
+        # 1. 尝试从缓存获取旧令牌
+        token_data = self._get_cached_token(cache_key)
+        if token_data and token_data.get("access_token"):
+            logger.warning("使用缓存中的旧访问令牌")
+            return token_data.get("access_token")
+        
+        # 2. 如果有配置的备用令牌，返回备用令牌
+        if hasattr(settings, "WECHAT_MP_ACCESS_TOKEN_FALLBACK"):
+            logger.warning("使用备用访问令牌")
+            return settings.WECHAT_MP_ACCESS_TOKEN_FALLBACK
+            
+        # 3. 没有可用的回退选项，抛出异常
+        raise WechatError(f"获取访问令牌失败: {error_msg}")
     
     async def verify_mp_signature(self, signature: str, timestamp: str, nonce: str) -> bool:
         """
@@ -996,34 +1024,119 @@ class WechatService:
         )
 
 
-    async def handle_menu_click_event(event_key: str, openid: str, access_token: str) -> None:
+    async def handle_menu_click_event(self, event_key: str, openid: str, db: AsyncSession) -> None:
         """
         处理菜单点击事件并发送文本消息
         
         Args:
             event_key: 菜单项的key值
             openid: 用户的OpenID
-            access_token: 微信访问令牌
+            db: 数据库会话
         """
-        # 根据event_key决定回复内容
-        reply_text = ""
-        if event_key == "CHECK_BALANCE":
-            reply_text = "您的当前积分余额为1000分。"
-        elif event_key == "GET_BENEFITS":
-            reply_text = "您可以领取的福利包括：免费咖啡券、折扣购物券。"
-        elif event_key == "RECHARGE":
-            reply_text = "您可以通过以下链接充值积分：https://example.com/recharge"
-        elif event_key == "QUERY_API_KEY":
-            reply_text = "您的API KEY为：1234567890"
-        elif event_key == "RESET_API_KEY":
-            reply_text = "您的API KEY已重置，请检查您的邮箱以获取新的API KEY。"
-        elif event_key == "FEISHU_SHEET":
-            reply_text = "飞书表格使用说明：请访问https://example.com/feishu-sheet"
+        trace_key = request_ctx.get_trace_key()
+        logger.info(
+            f"处理菜单点击事件: {event_key}",
+            extra={"request_id": trace_key, "openid": openid, "event_key": event_key}
+        )
+        
+        try:
+            # 获取菜单回复文本
+            reply_text = await self._get_menu_reply_text(event_key, openid, db)
+            
+            # 发送文本消息
+            await self.send_text_message(openid, reply_text)
+            
+            logger.info(
+                f"菜单点击事件处理成功: {event_key}",
+                extra={"request_id": trace_key, "openid": openid, "event_key": event_key}
+            )
+            
+        except WechatError as e:
+            error_msg = f"处理菜单点击事件失败: {str(e)}"
+            logger.error(error_msg, extra={"request_id": trace_key, "openid": openid})
+            await self.send_text_message(openid, "很抱歉，服务暂时不可用，请稍后重试。")
+            
+        except Exception as e:
+            error_msg = f"处理菜单点击事件时发生未知错误: {str(e)}"
+            logger.error(
+                error_msg,
+                exc_info=True,
+                extra={"request_id": trace_key, "openid": openid, "event_key": event_key}
+            )
+            await self.send_text_message(openid, "系统繁忙，请稍后重试。")
 
-        # 发送文本消息
-        await send_text_message(access_token, openid, reply_text)
+    async def _get_menu_reply_text(self, event_key: str, openid: str, db: AsyncSession) -> str:
+        """
+        获取菜单回复文本
+        
+        Args:
+            event_key: 菜单项的key值
+            openid: 用户的OpenID
+            db: 数据库会话
+            
+        Returns:
+            str: 回复文本
+        """
+        trace_key = request_ctx.get_trace_key()
+        
+        try:
+            if event_key == "CHECK_BALANCE":
+                return await self._get_user_points_info(openid, db)
+            elif event_key == "GET_BENEFITS":
+                return await self._handle_get_benefits(openid, db)
+            elif event_key == "RECHARGE":
+                return "小爷您稍后，2025年4月10日之前首次点击【领福利】免费送您1000积分，不够您再留言，10号之后开放充值。"
+            elif event_key == "QUERY_API_KEY":
+                api_key_info = await self._get_user_api_key_info(openid, db)
+                if api_key_info:
+                    expired_date = api_key_info["expired_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    return f"您的API KEY为：{api_key_info['key_value']}\n过期时间：{expired_date}"
+                else:
+                    return "未找到您的API KEY信息。" 
+            elif event_key == "NEW_API_KEY":
+                return await self._handle_new_api_key_request(openid, db)
+            elif event_key == "RESET_API_KEY":
+                return await self._reset_user_api_key(openid, db)
+            elif event_key == "FEISHU_SHEET":
+                return "飞书表格使用说明：请访问https://example.com/feishu-sheet"
+            else:
+                logger.warning(
+                    f"收到未知的菜单命令: {event_key}",
+                    extra={"request_id": trace_key, "openid": openid}
+                )
+                return "未知的菜单命令"
+        except Exception as e:
+            logger.error(
+                f"生成菜单回复文本失败: {str(e)}",
+                exc_info=True,
+                extra={"request_id": trace_key, "openid": openid, "event_key": event_key}
+            )
+            raise WechatError(f"生成回复文本失败: {str(e)}")
 
-    async def send_text_message(access_token: str, openid: str, text: str) -> None:
+    async def _get_user_points_info(self, openid: str, db: AsyncSession) -> str:
+        """获取用户积分信息文本"""
+        try:
+            points_info = await self.points_service.get_user_points(openid, db)
+            
+            # 构建积分信息消息
+            reply_text = (
+                f"您的积分详情：\n"
+                f"总积分：{points_info['available_points']}\n"
+                f"可用积分：{points_info['available_points']}"
+            )
+            
+            # # 添加即将过期积分提醒
+            # if points_info['expiring_soon']:
+            #     expiring = points_info['expiring_soon'][0]
+            #     reply_text += f"\n\n温馨提醒：您有 {expiring['points']} 积分将于 {expiring['expire_time'][:10]} 过期"
+            
+            return reply_text
+        except Exception as e:
+            logger.error(f"查询积分失败: {str(e)}", exc_info=True)
+            return "查询积分失败，请稍后重试。"
+
+    # 修复 send_text_message 方法
+    async def send_text_message(self, openid: str, text: str) -> None:
         """
         发送文本消息
         
@@ -1032,6 +1145,8 @@ class WechatService:
             openid: 用户的OpenID
             text: 要发送的文本内容
         """
+
+        access_token = await self._get_mp_access_token()
         url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
         
         message_data = {
@@ -1101,15 +1216,25 @@ class WechatService:
                         },
                         {
                             "type": "click",
+                            "name": "新建",
+                            "key": "NEW_API_KEY"
+                        },
+                        {
+                            "type": "click",
                             "name": "重置",
                             "key": "RESET_API_KEY"
                         }
                     ]
                 },
                 {
-                    "type": "click",
-                    "name": "飞书表格",
-                    "key": "FEISHU_SHEET"
+                    "name": "使用说明",
+                    "sub_button": [
+                        {
+                            "type": "click",
+                            "name": "飞书表格",
+                            "key": "FEISHU_SHEET"
+                        }
+                    ]
                 }
             ]
         }
@@ -1129,3 +1254,145 @@ class WechatService:
         except Exception as e:
             logger.error(f"创建菜单时出错: {str(e)}", exc_info=True)
             raise WechatError(f"创建菜单失败: {str(e)}")
+
+
+        
+    async def _get_user_api_key_info(self, openid: str, db: AsyncSession) -> Optional[str]:
+        """
+        根据openid查询用户的API Key信息
+        
+        Args:
+            openid: 微信用户的OpenID
+            db: 数据库会话
+            
+        Returns:
+            Optional[str]: 用户的API Key信息或None
+        """
+        try:
+            ## 通过openid查询MetaUser
+            stmt_user = select(MetaUser.id).where(MetaUser._open_id == openid).where(
+                MetaUser.status == 1,
+                MetaUser.scope == PlatformScopeEnum.WECHAT.value
+            )
+            result_user = await db.execute(stmt_user)
+            user_id = result_user.scalar_one_or_none()
+            
+            if not user_id:
+                logger.error(f"未找到用户: {openid}")
+                return None
+            
+            # 使用MetaUser的id查询MetaAuthKey
+            stmt_key = select(MetaAuthKey.key_value, MetaAuthKey.expired_at).where(MetaAuthKey.user_id == user_id).where(
+                MetaAuthKey.key_status == 1,
+                MetaAuthKey.status == 1,
+                MetaAuthKey.expired_at > datetime.now()
+            )
+            result_key = await db.execute(stmt_key)
+            api_key_info = result_key.first()
+            
+            if api_key_info:
+                return {
+                    "key_value": api_key_info[0],
+                    "expired_at": api_key_info[1]
+                }
+            return None
+        except Exception as e:
+            logger.error(f"查询API Key信息时出错: {str(e)}", exc_info=True)
+            return None
+
+    async def _reset_user_api_key(self, openid: str, db: AsyncSession) -> str:
+        """
+        重置用户的API KEY
+        
+        Args:
+            openid: 微信用户的OpenID
+            db: 数据库会话
+            
+        Returns:
+            str: 重置结果消息
+        """
+        try:
+            # 1. 查询用户ID
+            stmt_user = select(MetaUser.id).where(MetaUser._open_id == openid).where(
+                MetaUser.status == 1,
+                MetaUser.scope == PlatformScopeEnum.WECHAT.value
+            )
+            result_user = await db.execute(stmt_user)
+            user_id = result_user.scalar_one_or_none()
+            
+            if not user_id:
+                return "未找到用户信息，无法重置API KEY"
+            
+            # 2. 使现有API KEY失效
+            await db.execute(
+                update(MetaAuthKey)
+                .where(MetaAuthKey.user_id == user_id)
+                .where(MetaAuthKey.key_status == 1)  # 只更新当前有效的KEY
+                .values(
+                    key_status=0,  # 标记为失效
+                    updated_at=datetime.now(),  # 更新修改时间
+                    description=func.concat(
+                        MetaAuthKey.description, 
+                        f"\n[失效于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}]"
+                    ),  # 追加失效时间到描述
+                    memo=func.concat(
+                        MetaAuthKey.memo, 
+                        f"\n用户 {openid} 于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 重置导致失效"
+                    )  # 追加失效原因到备注
+                )
+            )
+            
+            # 3. 生成新的API KEY
+            new_api_key = str(uuid.uuid4()).replace("-", "")
+            expires_at = datetime.now() + timedelta(days=365)  # 30天后过期
+            
+            # 4. 创建新的API KEY记录
+            new_auth_key = MetaAuthKey(
+                user_id=user_id,
+                key_name=f"API_KEY_{datetime.now().strftime('%Y%m%d')}",  #
+                key_value=new_api_key,
+                key_status=1,
+                status=1,
+                expired_at=expires_at,
+                created_at=datetime.now(),
+                updated_at=datetime.now(),
+                description="通过微信公众号重置的API KEY",  # 描述信息
+                memo=f"用户 {openid} 于 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} 重置API KEY"  # 备注信息
+            )
+            db.add(new_auth_key)
+            await db.commit()
+            
+            # 5. 发送邮件通知(这里需要实现邮件发送逻辑)
+            # await self._send_api_key_email(openid, new_api_key, expires_at)
+            
+            return f"您的API KEY已重置为：{new_api_key}\n新KEY将在{expires_at.strftime('%Y-%m-%d')}过期"
+            
+        except Exception as e:
+            logger.error(f"重置API KEY时出错: {str(e)}", exc_info=True)
+            await db.rollback()
+            return "重置API KEY失败，请稍后重试"
+
+
+    async def _handle_new_api_key_request(self, openid: str, db: AsyncSession) -> str:
+        """
+        处理新建API KEY请求
+        
+        Args:
+            openid: 微信用户的OpenID
+            db: 数据库会话
+            
+        Returns:
+            str: 返回给用户的消息
+        """
+        # 检查是否已有有效API KEY
+        api_key_info = await self._get_user_api_key_info(openid, db)
+        if api_key_info:
+            expired_date = api_key_info["expired_at"].strftime("%Y-%m-%d %H:%M:%S")
+            return f"您已有有效的API KEY：{api_key_info['key_value']}\n过期时间：{expired_date}\n无需新建"
+        
+        # 没有有效API KEY则创建新的
+        return await self._reset_user_api_key(openid, db)
+
+
+    async def _handle_get_benefits(self, openid: str, db: AsyncSession) -> str:
+        return await self.points_service.claim_first_time_points(openid, db)

@@ -15,8 +15,8 @@ class LogService:
         method_name: str,
         source: str = "api",
         app_id: Optional[str] = None,
-        user_uuid: Optional[str] = None,  # 修改为user_uuid
-        user_nickname: Optional[str] = None,  # 新增字段
+        user_uuid: Optional[str] = None,
+        user_nickname: Optional[str] = None,
         entity_id: Optional[str] = None,
         type: str = "default",
         tollgate: str = "1-1",
@@ -33,6 +33,27 @@ class LogService:
                 # 确保获取新的会话
                 session = await stack.enter_async_context(async_session_maker())
                 
+                # 处理para参数，去除不可序列化对象
+                processed_para = None
+                if para is not None:
+                    processed_para = {}
+                    for key, value in para.items():
+                        # 跳过不可序列化的对象
+                        if isinstance(value, AsyncSession) or hasattr(value, '__dict__') and not hasattr(value, 'to_dict'):
+                            continue
+                        processed_para[key] = value
+                
+                # 处理header参数，去除不可序列化对象
+                processed_header = None
+                if header is not None:
+                    processed_header = {}
+                    for key, value in header.items():
+                        # 跳过不可序列化的对象
+                        if isinstance(value, AsyncSession) or hasattr(value, '__dict__') and not hasattr(value, 'to_dict'):
+                            continue
+                        processed_header[key] = value
+                
+                # 处理body
                 processed_body = None
                 if body is not None:
                     if isinstance(body, dict) or isinstance(body, list):
@@ -47,15 +68,15 @@ class LogService:
                     trace_key=trace_key,
                     source=source,
                     app_id=app_id,
-                    user_uuid=user_uuid,  # 修改为user_uuid
-                    user_nickname=user_nickname,  # 新增字段
+                    user_uuid=user_uuid,
+                    user_nickname=user_nickname,
                     entity_id=entity_id,
                     type=type,
                     method_name=method_name,
                     tollgate=tollgate,
                     level=level,
-                    para=para,
-                    header=header,
+                    para=processed_para,  # 使用处理后的para
+                    header=processed_header,  # 使用处理后的header
                     body=processed_body[:10000] if processed_body else None,
                     memo=memo,
                     ip_address=ip_address,

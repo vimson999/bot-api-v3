@@ -79,24 +79,16 @@ async def wechat_mp_callback(
                 db
             )
             
-            return BaseResponse(
-                code=200,
-                message="用户关注处理成功",
-                data=result
-            )
+            return PlainTextResponse(content="success")  
         elif event.Event.lower() == "click":
-            await wechat_service.handle_menu_click_event(event.EventKey, event.FromUserName, access_token)
-            return BaseResponse(code=200, message="菜单点击事件处理成功")
+            await wechat_service.handle_menu_click_event(event.EventKey, event.FromUserName,db)
+            return PlainTextResponse(content="success")  
         else:
             logger.info(
                 f"非关注事件，忽略处理: {event.Event}",
                 extra={"request_id": trace_key, "openid": event.FromUserName}
             )
-            return BaseResponse(
-                code=200,
-                message="事件已接收",
-                data={"event": event.Event}
-            )
+            return PlainTextResponse(content="success")  
     except Exception as e:
         logger.error(
             f"处理微信公众号事件时发生未知错误: {str(e)}", 

@@ -23,6 +23,7 @@ from bot_api_v1.app.api.routers import wechat_mp  # Import the media route
 
 from bot_api_v1.app.monitoring import setup_metrics, metrics_middleware, start_system_metrics_collector
 from bot_api_v1.app.api.routers import wechat  # Import the wechat router
+from bot_api_v1.app.services.business.wechat_service import WechatService  # 添加这行导入
 
 def create_app():
     """创建并配置FastAPI应用"""
@@ -30,8 +31,9 @@ def create_app():
         title=settings.PROJECT_NAME,
         description="高性能API服务",
         version=settings.VERSION,
-        docs_url=None if settings.ENVIRONMENT == "production" else "/api/docs",
-        redoc_url=None if settings.ENVIRONMENT == "production" else "/api/redoc",
+        docs_url="/docs",  # Swagger UI 路径
+        redoc_url="/redoc",  # ReDoc 路径
+        openapi_url="/openapi.json",  # OpenAPI JSON文档路径
     )
 
     # 1. 添加日志中间件
@@ -105,6 +107,9 @@ def create_app():
                 "by_method": {}
             }
             
+            # 初始化微信服务实例
+            app.state.wechat_service = WechatService()
+
             # 等待数据库可用
             if not await wait_for_db(
                 max_retries=settings.DB_CONNECT_RETRIES,
@@ -114,9 +119,16 @@ def create_app():
             
 
             if settings.CURRENT_WECHAT_MP_MENU_VERSION < settings.TARGET_WECHAT_MP_MENU_VERSION:
-                access_token = await wechat_service._get_mp_access_token()
-                await wechat_service.create_wechat_menu(access_token)
-                settings.CURRENT_WECHAT_MP_MENU_VERSION = settings.TARGET_WECHAT_MP_MENU_VERSION
+                try:
+                    access_token = await app.state.wechat_service._get_mp_access_token()
+                    await app.state.wechat_service.create_wechat_menu(access_token)
+                    
+                    # 直接更新设置值
+                    settings.CURRENT_WECHAT_MP_MENU_VERSION = settings.TARGET_WECHAT_MP_MENU_VERSION
+                    
+                    logger.info(f"微信菜单已更新到版本 {settings.TARGET_WECHAT_MP_MENU_VERSION}")
+                except Exception as e:
+                    logger.error(f"更新微信菜单失败: {str(e)}")
 
             # 初始化数据库
             # await init_db()
