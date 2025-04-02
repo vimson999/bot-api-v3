@@ -52,6 +52,7 @@ class SimpleCache:
 
 # 创建缓存实例
 script_cache = SimpleCache(max_size=500)  # 最多缓存500项
+user_cache = SimpleCache(max_size=1000)  # 用户相关缓存，容量更大
 
 # 缓存装饰器
 def cache_result(expire_seconds=86400, prefix="script_cache", skip_args=None):

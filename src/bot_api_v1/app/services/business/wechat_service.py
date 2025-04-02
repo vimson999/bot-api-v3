@@ -1135,40 +1135,42 @@ class WechatService:
             logger.error(f"查询积分失败: {str(e)}", exc_info=True)
             return "查询积分失败，请稍后重试。"
 
-    # 修复 send_text_message 方法
     async def send_text_message(self, openid: str, text: str) -> None:
         """
         发送文本消息
         
         Args:
-            access_token: 微信访问令牌
             openid: 用户的OpenID
             text: 要发送的文本内容
         """
-
-        access_token = await self._get_mp_access_token()
-        url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
-        
-        message_data = {
-            "touser": openid,
-            "msgtype": "text",
-            "text": {
-                "content": text
-            }
-        }
-        
         try:
-            async with httpx.AsyncClient() as client:
+            access_token = await self._get_mp_access_token()
+            url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+            
+            message_data = {
+                "touser": openid,
+                "msgtype": "text",
+                "text": {
+                    "content": text
+                }
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:  # 添加超时设置
                 response = await client.post(url, json=message_data)
                 response.raise_for_status()
                 result = response.json()
                 
-                if result.get("errcode", 0) != 0:
+                # 更健壮的错误检查
+                if isinstance(result, dict) and result.get("errcode", 0) != 0:
                     logger.error(f"发送文本消息失败: {result}")
                     raise WechatError(f"发送文本消息失败: {result.get('errmsg', '未知错误')}")
                     
                 logger.info(f"成功发送文本消息给用户: {openid}")
                 
+        except (KeyError, TypeError) as e:
+            # 处理结果解析错误
+            logger.error(f"解析微信API响应时出错: {str(e)}", exc_info=True)
+            raise WechatError(f"解析微信API响应失败: {str(e)}")
         except Exception as e:
             logger.error(f"发送文本消息时出错: {str(e)}", exc_info=True)
             raise WechatError(f"发送文本消息失败: {str(e)}")
@@ -1227,7 +1229,7 @@ class WechatService:
                     ]
                 },
                 {
-                    "name": "使用说明",
+                    "name": "应用场景",
                     "sub_button": [
                         {
                             "type": "click",
@@ -1257,7 +1259,7 @@ class WechatService:
 
 
         
-    async def _get_user_api_key_info(self, openid: str, db: AsyncSession) -> Optional[str]:
+    async def _get_user_api_key_info(self, openid: str, db: AsyncSession) -> Optional[Dict[str, Any]]:
         """
         根据openid查询用户的API Key信息
         
@@ -1266,29 +1268,29 @@ class WechatService:
             db: 数据库会话
             
         Returns:
-            Optional[str]: 用户的API Key信息或None
+            Optional[Dict[str, Any]]: 用户的API Key信息或None
         """
         try:
-            ## 通过openid查询MetaUser
-            stmt_user = select(MetaUser.id).where(MetaUser._open_id == openid).where(
-                MetaUser.status == 1,
-                MetaUser.scope == PlatformScopeEnum.WECHAT.value
-            )
-            result_user = await db.execute(stmt_user)
-            user_id = result_user.scalar_one_or_none()
-            
-            if not user_id:
-                logger.error(f"未找到用户: {openid}")
-                return None
-            
-            # 使用MetaUser的id查询MetaAuthKey
-            stmt_key = select(MetaAuthKey.key_value, MetaAuthKey.expired_at).where(MetaAuthKey.user_id == user_id).where(
+            # 优化查询：直接联表查询，减少数据库往返
+            stmt = select(
+                MetaAuthKey.key_value, 
+                MetaAuthKey.expired_at
+            ).join(
+                MetaUser, 
+                and_(
+                    MetaUser.id == MetaAuthKey.user_id,
+                    MetaUser._open_id == openid,
+                    MetaUser.status == 1,
+                    MetaUser.scope == PlatformScopeEnum.WECHAT.value
+                )
+            ).where(
                 MetaAuthKey.key_status == 1,
                 MetaAuthKey.status == 1,
                 MetaAuthKey.expired_at > datetime.now()
             )
-            result_key = await db.execute(stmt_key)
-            api_key_info = result_key.first()
+            
+            result = await db.execute(stmt)
+            api_key_info = result.first()
             
             if api_key_info:
                 return {
@@ -1395,4 +1397,36 @@ class WechatService:
 
 
     async def _handle_get_benefits(self, openid: str, db: AsyncSession) -> str:
-        return await self.points_service.claim_first_time_points(openid, db)
+        """
+        处理用户领取福利的请求
+        
+        Args:
+            openid: 微信用户的OpenID
+            db: 数据库会话
+            
+        Returns:
+            str: 处理结果消息
+        """
+        try:
+            # 调用积分服务的方法，但需要处理返回结果
+            result = await self.points_service.claim_first_time_points(openid, db)
+            
+            # 检查返回结果的格式，确保它是字符串
+            if isinstance(result, dict):
+                if result.get("success", False):
+                    # 成功领取积分
+                    points = result.get("data", {}).get("points", 1000)
+                    return f"恭喜您成功领取 {points} 积分！\n当前可用积分：{result.get('data', {}).get('available_points', points)}"
+                else:
+                    # 领取失败，返回错误消息
+                    return result.get("message", "领取福利失败，请稍后重试")
+            elif isinstance(result, str):
+                # 如果已经是字符串，直接返回
+                return result
+            else:
+                # 未知返回类型，返回通用消息
+                return "领取福利操作已处理，请查询积分余额确认结果"
+                
+        except Exception as e:
+            logger.error(f"处理领取福利请求时出错: {str(e)}", exc_info=True)
+            return "领取福利失败，请稍后重试"

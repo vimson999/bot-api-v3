@@ -22,7 +22,8 @@ from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
 from bot_api_v1.app.models.meta_user_points import MetaUserPoints
 from bot_api_v1.app.models.rel_points_transaction import RelPointsTransaction
 from bot_api_v1.app.models.meta_user import MetaUser
-
+from bot_api_v1.app.services.business.user_cache_service import UserCacheService
+from bot_api_v1.app.services.business.user_service import UserService
 
 # 平台范围枚举
 class PlatformScopeEnum(str, Enum):
@@ -72,7 +73,7 @@ class UserNotFoundError(PointsError):
             details["openid"] = openid
         if user_id:
             details["user_id"] = user_id
-            
+
         super().__init__(
             message="未找到用户信息，无法领取福利", 
             code="USER_NOT_FOUND",
@@ -127,7 +128,7 @@ class PointsService:
     
     def __init__(self):
         """初始化积分服务"""
-        pass
+        self.user_service = UserService()  # 添加用户服务实例
     
     @gate_keeper()
     @log_service_call(method_type="points", tollgate="30-2")
@@ -436,14 +437,15 @@ class PointsService:
         Returns:
             Tuple[MetaUserPoints, bool]: 用户积分账户对象和是否新创建的标志
         """
-        # 使用FOR UPDATE行级锁
+        # 使用FOR UPDATE行级锁，但移除不支持的timeout参数
         stmt = select(MetaUserPoints).where(
             and_(
                 MetaUserPoints.user_id == user_id,
                 MetaUserPoints.status == 1  # 确保只获取有效账户
             )
-        ).with_for_update(skip_locked=True, timeout=self.FIRST_TIME_POINTS_CONFIG["lock_timeout"])
+        ).with_for_update(skip_locked=True)  # 移除timeout参数
         
+        # 其余代码保持不变
         result = await db.execute(stmt)
         user_points = result.scalar_one_or_none()
         
@@ -565,12 +567,12 @@ class PointsService:
         return transaction
     
     async def _update_user_points(
-        self,
-        db: AsyncSession,
-        user_points: MetaUserPoints,
-        points_to_add: int,
-        trace_key: str = None
-    ) -> MetaUserPoints:
+            self,
+            db: AsyncSession,
+            user_points: MetaUserPoints,
+            points_to_add: int,
+            trace_key: str = None
+        ) -> MetaUserPoints:
         """
         更新用户积分
         
@@ -613,7 +615,7 @@ class PointsService:
             user_points.updated_at = current_time
             
             logger.info(
-                f"更新用户积分成功: {user_points.user__id}, 增加: {points_to_add}, 当前可用: {new_available}",
+                f"更新用户积分成功: {user_points.user_id}, 增加: {points_to_add}, 当前可用: {new_available}",  # 修复拼写错误：user__id -> user_id
                 extra={
                     "request_id": trace_key,
                     "user_id": str(user_points.user_id),
@@ -629,6 +631,7 @@ class PointsService:
                 extra={"request_id": trace_key, "user_id": str(user_points.user_id)}
             )
             raise
+
 
     @gate_keeper()
     @log_service_call(method_type="points", tollgate="30-3")
@@ -675,16 +678,14 @@ class PointsService:
             platform_scope = platform_scope.value
         
         try:
-            # 1. 查询用户ID
-            stmt_user = select(MetaUser.id).where(
-                and_(
-                    MetaUser._open_id == openid,
-                    MetaUser.status == 1,
-                    MetaUser.scope == platform_scope
-                )
+            # 修改：在事务外查询用户ID
+            user_id = await self.user_service.get_user_id_by_openid(
+                db, 
+                openid, 
+                platform_scope, 
+                trace_key, 
+                str(operation_id)
             )
-            result_user = await db.execute(stmt_user)
-            user_id = result_user.scalar_one_or_none()
             
             if not user_id:
                 logger.warning(
@@ -700,15 +701,28 @@ class PointsService:
             # 使用重试机制处理并发冲突
             while retries < max_retries:
                 try:
-                    # 开始事务
-                    async with db.begin():
+                    # 修改：创建新的数据库会话用于事务，避免使用已有事务的会话
+                    async with db.begin_nested() as nested:  # 使用嵌套事务
                         # 2. 检查是否已领取过
-                        if await self._check_existing_claim(db, user_id, trace_key):
+                        existing_claim = await self._get_existing_claim(db, user_id, trace_key)
+                        if existing_claim:
+                            claim_time = existing_claim.created_at.strftime("%Y-%m-%d %H:%M")
                             logger.info(
-                                f"[{operation_id}] 用户已领取过积分奖励: {user_id}",
-                                extra={"request_id": trace_key, "user_id": str(user_id)}
+                                f"[{operation_id}] 用户已领取过积分奖励: {user_id}, 领取时间: {claim_time}",
+                                extra={
+                                    "request_id": trace_key, 
+                                    "user_id": str(user_id),
+                                    "claim_time": claim_time
+                                }
                             )
-                            return {"success": False, "message": "您已领取过积分奖励", "code": "ALREADY_CLAIMED"}
+                            return {
+                                "success": False, 
+                                "message": f"您已于 {claim_time} 领取过积分奖励", 
+                                "code": "ALREADY_CLAIMED",
+                                "data": {
+                                    "claim_time": claim_time
+                                }
+                            }
                         
                         # 3. 获取或创建用户积分账户
                         user_points, is_new = await self._get_or_create_user_points(db, user_id, trace_key)
@@ -749,33 +763,36 @@ class PointsService:
                             remark=remark,
                             trace_key=trace_key
                         )
+                    
+                    # 提交外部事务
+                    await db.commit()
                         
-                        # 8. 记录成功日志
-                        elapsed = time.time() - start_time
-                        logger.info(
-                            f"[{operation_id}] 用户首次领取积分成功: {user_id}, 奖励: {reward_points}积分, "
-                            f"耗时: {elapsed:.2f}s",
-                            extra={
-                                "request_id": trace_key,
-                                "user_id": str(user_id),
-                                "points_added": reward_points,
-                                "current_points": user_points.available_points,
-                                "elapsed_time": elapsed,
-                                "transaction_no": transaction.transaction_no
-                            }
-                        )
-                        
-                        # 9. 返回成功结果
-                        return {
-                            "success": True, 
-                            "message": f"恭喜您获得{reward_points}积分奖励！", 
-                            "data": {
-                                "points_added": reward_points,
-                                "current_points": user_points.available_points,
-                                "transaction_no": transaction.transaction_no,
-                                "expire_time": expire_time.isoformat()
-                            }
+                    # 8. 记录成功日志
+                    elapsed = time.time() - start_time
+                    logger.info(
+                        f"[{operation_id}] 用户首次领取积分成功: {user_id}, 奖励: {reward_points}积分, "
+                        f"耗时: {elapsed:.2f}s",
+                        extra={
+                            "request_id": trace_key,
+                            "user_id": str(user_id),
+                            "points_added": reward_points,
+                            "current_points": user_points.available_points,
+                            "elapsed_time": elapsed,
+                            "transaction_no": transaction.transaction_no
                         }
+                    )
+                    
+                    # 9. 返回成功结果
+                    return {
+                        "success": True, 
+                        "message": f"恭喜您获得{reward_points}积分奖励！", 
+                        "data": {
+                            "points_added": reward_points,
+                            "current_points": user_points.available_points,
+                            "transaction_no": transaction.transaction_no,
+                            "expire_time": expire_time.isoformat()
+                        }
+                    }
                     
                 except OperationalError as e:
                     # 数据库锁超时或死锁，可以重试
@@ -815,6 +832,24 @@ class PointsService:
                         await db.rollback()
                         raise PointsError("操作失败，请稍后再试", "DATABASE_ERROR")
                 
+                except SQLAlchemyError as e:
+                    # 修改：捕获所有SQLAlchemy错误
+                    retries += 1
+                    if retries < max_retries:
+                        await db.rollback()
+                        logger.warning(
+                            f"[{operation_id}] 数据库错误，正在重试 {retries}/{max_retries}: {str(e)}",
+                            extra={"request_id": trace_key, "error": str(e)}
+                        )
+                        await asyncio.sleep(backoff_factor * (2 ** retries))
+                    else:
+                        logger.error(
+                            f"[{operation_id}] 数据库错误达到最大重试次数: {str(e)}",
+                            extra={"request_id": trace_key, "error": str(e)}
+                        )
+                        await db.rollback()
+                        return {"success": False, "message": "系统繁忙，请稍后再试", "code": "DATABASE_ERROR"}
+            
             # 如果所有重试都失败了
             if retries >= max_retries:
                 logger.error(
@@ -876,3 +911,41 @@ class PointsService:
                 f"[{operation_id}] 首次领取积分操作完成，耗时: {elapsed:.2f}s",
                 extra={"request_id": trace_key, "elapsed_time": elapsed, "openid": openid[:5] + "***"}
             )
+
+    async def _get_existing_claim(
+        self, 
+        db: AsyncSession, 
+        user_id: uuid.UUID,
+        trace_key: str = None
+    ) -> Optional[RelPointsTransaction]:
+        """
+        获取用户首次领取积分记录（如果存在）
+        
+        Args:
+            db: 异步数据库会话
+            user_id: 用户ID
+            trace_key: 请求追踪键
+            
+        Returns:
+            Optional[RelPointsTransaction]: 如果存在返回交易记录对象，否则返回None
+        """
+        remark_pattern = "首次领取积分奖励%"
+        
+        stmt = select(RelPointsTransaction).where(
+            and_(
+                RelPointsTransaction.user_id == user_id,
+                RelPointsTransaction.transaction_type == self.FIRST_TIME_POINTS_CONFIG["transaction_type"].value,
+                RelPointsTransaction.remark.like(remark_pattern),
+                RelPointsTransaction.status == 1
+            )
+        ).order_by(desc(RelPointsTransaction.created_at)).limit(1)
+        
+        try:
+            result = await db.execute(stmt)
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(
+                f"查询用户首次领取积分记录失败: {str(e)}", 
+                extra={"request_id": trace_key, "user_id": str(user_id)}
+            )
+            return None
