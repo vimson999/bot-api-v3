@@ -24,6 +24,7 @@ class LogService:
         para: Optional[Dict[str, Any]] = None,
         header: Optional[Dict[str, Any]] = None,
         body: Optional[Any] = None,
+        description: Optional[str] = None,  # 添加description参数
         memo: Optional[str] = None,
         ip_address: Optional[str] = None
     ):
@@ -75,9 +76,10 @@ class LogService:
                     method_name=method_name,
                     tollgate=tollgate,
                     level=level,
-                    para=processed_para,  # 使用处理后的para
-                    header=processed_header,  # 使用处理后的header
+                    para=processed_para,
+                    header=processed_header,
                     body=processed_body[:10000] if processed_body else None,
+                    description=description[:10000] if description else None,  # 添加description字段
                     memo=memo,
                     ip_address=ip_address,
                     created_at=datetime.now()

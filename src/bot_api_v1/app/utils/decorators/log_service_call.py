@@ -8,6 +8,7 @@ import time
 import functools
 import inspect
 import asyncio
+import uuid
 from typing import Any, Callable, Optional, Dict, Type, TypeVar, cast
 import traceback
 import json
@@ -19,7 +20,11 @@ from bot_api_v1.app.tasks.base import register_task, TASK_TYPE_LOG
 
 F = TypeVar('F', bound=Callable[..., Any])
 
-
+def _format_for_json(obj: Any) -> Any:
+    """格式化对象使其可JSON序列化"""
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+    return str(obj)
 def log_service_call(
     method_type: str = "service", 
     tollgate: str = "20-1",
@@ -288,26 +293,27 @@ async def _log_to_database(
 ) -> None:
     """记录服务调用日志到数据库"""
     try:
-        # 构造日志数据
+        # 构造body数据（用于存储POST请求的body参数）
         body_dict = {
             "success": success,
             "duration_ms": round(duration * 1000, 2)
         }
         
-        if success and result is not None:
-            # 成功情况下记录结果摘要
-            if isinstance(result, dict):
-                body_dict["result_summary"] = {k: "..." for k in result.keys()}
-            elif isinstance(result, list):
-                body_dict["result_summary"] = f"List with {len(result)} items"
-            else:
-                body_dict["result_summary"] = str(result)[:100]
-        
         if not success and error:
             body_dict["error"] = error
         
         # 序列化body为JSON字符串
-        body = json.dumps(body_dict)
+        body = json.dumps(body_dict, default=_format_for_json)
+        
+        # 构造返回值数据（存储在description中）
+        description = None
+        if success and result is not None:
+            if isinstance(result, dict):
+                description = json.dumps(result, default=_format_for_json)
+            elif isinstance(result, list):
+                description = json.dumps(result, default=_format_for_json)
+            else:
+                description = str(result)
         
         # 构造备注信息
         memo = f"{method_type.capitalize()} call: {method_name}"
@@ -336,9 +342,10 @@ async def _log_to_database(
             type=method_type,
             tollgate=tollgate,
             level=level,
-            para=params,
+            para=params,  # URL参数
             header=None,  # 服务调用不需要header
-            body=body,
+            body=body,    # POST的body参数
+            description=description,  # 返回值
             memo=memo,
             ip_address=ip_address
         )

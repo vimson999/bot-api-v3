@@ -47,7 +47,7 @@ wechat_service = WechatService()
 )
 @TollgateConfig(
     title="微信公众号回调",
-    type="subscribe",
+    type="wechat_mp_callback",
     base_tollgate="20",
     current_tollgate="1",
     plat="wechat_mp"
@@ -70,6 +70,19 @@ async def wechat_mp_callback(
         # Convert to WechatMpEvent model
         event = WechatMpEvent(**event_data)
         
+        # 设置请求上下文信息
+        client_ip = request.client.host if request.client else None
+
+        ctx = request_ctx.get_context()
+        ctx.update({
+            'source': 'wechat_mp',  # 来源为微信公众号
+            'user_id': event.FromUserName,  # OpenID作为用户ID
+            'user_name': None,  # 此时还未获取用户昵称
+            'app_id': event.ToUserName,  # 公众号的原始ID
+            'ip_address': client_ip,  # XML请求中没有IP信息
+        })
+        request_ctx.set_context(ctx)
+
         # 只处理关注事件
         if event.Event.lower() == "subscribe":
             # 获取用户OpenID并处理关注事件

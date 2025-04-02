@@ -893,6 +893,8 @@ class WechatService:
             return False
     
 
+    @gate_keeper()
+    @log_service_call()
     async def handle_user_subscribe(self, openid: str, trace_key: str, db: AsyncSession) -> Dict[str, Any]:
         """
         处理用户关注事件
@@ -1023,7 +1025,8 @@ class WechatService:
             template_id=template_id
         )
 
-
+    @gate_keeper()
+    @log_service_call()
     async def handle_menu_click_event(self, event_key: str, openid: str, db: AsyncSession) -> None:
         """
         处理菜单点击事件并发送文本消息
@@ -1065,6 +1068,8 @@ class WechatService:
             )
             await self.send_text_message(openid, "系统繁忙，请稍后重试。")
 
+    @gate_keeper()
+    @log_service_call()
     async def _get_menu_reply_text(self, event_key: str, openid: str, db: AsyncSession) -> str:
         """
         获取菜单回复文本
@@ -1135,6 +1140,8 @@ class WechatService:
             logger.error(f"查询积分失败: {str(e)}", exc_info=True)
             return "查询积分失败，请稍后重试。"
 
+    @gate_keeper()
+    @log_service_call()
     async def send_text_message(self, openid: str, text: str) -> None:
         """
         发送文本消息
