@@ -166,7 +166,7 @@ class XHSService:
     
     @gate_keeper()
     @log_service_call(method_type="xhs", tollgate="10-2")
-    @cache_result(expire_seconds=3600)
+    @cache_result(expire_seconds=600)
     async def get_note_info(self, note_url: str, extract_text: bool = False) -> Dict[str, Any]:
         """
         获取小红书笔记信息

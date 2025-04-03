@@ -61,7 +61,8 @@ def require_auth_key(exempt: bool = False):
             
             try:
                 # 步骤5：验证密钥
-                key_obj = await _validate_key(db, auth_key, exempt)
+                # 确保db不为None再调用_validate_key
+                key_obj = await _validate_key(db, auth_key, exempt) if db else None
                 if not key_obj:
                     if exempt:
                         return await func(*args, **kwargs)
@@ -74,11 +75,11 @@ def require_auth_key(exempt: bool = False):
                 now = datetime.now()
                 
                 # 检查过期状态
-                if await _check_key_expired(db, request, key_obj, now, exempt):
+                if db and await _check_key_expired(db, request, key_obj, now, exempt):
                     return await func(*args, **kwargs) if exempt else None
                 
                 # 步骤7：检查用户积分
-                if await _check_user_points(db, request, key_obj, exempt):
+                if db and await _check_user_points(db, request, key_obj, exempt):
                     return await func(*args, **kwargs) if exempt else None
                 
                 # 步骤8：执行原始函数

@@ -98,7 +98,10 @@ class MediaService:
         
         # 调用抖音服务获取视频信息
         # video_info = await self.douyin_service.get_video_info(url, extract_text=extract_text)
-        video_info = await self.tiktok_service.get_video_info(url, extract_text=extract_text)
+        # video_info = await self.tiktok_service.get_video_info(url, extract_text=extract_text)
+        video_info = await self.tiktok_service.get_video_info(url)
+        
+
         # video_info = {}
 
         # 转换为统一结构

@@ -78,8 +78,8 @@ class TikTokService:
         ```
         """
         # Set up logging level based on debug flag
-        if debug:
-            logger.setLevel(logging.DEBUG)
+        # if debug:
+        #     logger.setLevel(logging.DEBUG)
         
         self.cookie = cookie
         self.timeout = timeout

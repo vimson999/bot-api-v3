@@ -1230,6 +1230,7 @@ class WechatService:
                 .where(MetaAuthKey.key_status == 1)  # 只更新当前有效的KEY
                 .values(
                     key_status=0,  # 标记为失效
+                    status=0,  # 标记为失效
                     updated_at=datetime.now(),  # 更新修改时间
                     description=func.concat(
                         MetaAuthKey.description, 
