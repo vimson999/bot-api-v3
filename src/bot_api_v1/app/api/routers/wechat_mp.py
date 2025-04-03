@@ -4,6 +4,7 @@
 提供微信公众号用户关注、用户信息更新等接口
 """
 from typing import Dict, Any, Optional
+import json
 
 
 from bot_api_v1.app.services.business.order_service import OrderService, OrderError
@@ -288,9 +289,12 @@ async def create_order(
         # 获取商品信息
         product_service = ProductService()
         product = await product_service.get_product_by_id(request.product_id, db)
-        
         if not product:
-            raise HTTPException(status_code=404, detail="商品不存在")
+            return BaseResponse(
+                code=404,
+                message="商品不存在",
+                data=None
+            )
         
         # 使用OrderService创建订单
         order_data = await order_service.create_order(
