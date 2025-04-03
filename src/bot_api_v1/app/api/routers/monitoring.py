@@ -36,7 +36,7 @@ router = APIRouter(tags=["监控"])
 async def detailed_health_check(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    bg_tasks: BackgroundTasks = None
+    bg_tasks: BackgroundTasks = None  # 为 bg_tasks 提供默认值 None
 ):
     """
     详细的系统健康检查

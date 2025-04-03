@@ -97,7 +97,7 @@ async def transcribe_audio(
         print(f"授权头: {auth_header}")
 
         # 下载音频
-        audio_path, audio_title = await script_service.download_audio(request.url)
+        audio_path, audio_title = await script_service.download_audio(str(request.url))
         
         # 转写音频
         transcribed_text = await script_service.transcribe_audio(audio_path)

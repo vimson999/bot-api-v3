@@ -66,34 +66,35 @@ class OrderService:
             order_no = f"WX{int(time.time())}{secrets.randbelow(10000):04d}"
             
             # 创建订单记录
-            new_order = MetaOrder(
-                order_no=order_no,
-                order_type="PACKAGE",  # 或根据商品类型设置
-                user_id=uuid.UUID(user_id),
-                product_id=uuid.UUID(product_id),
-                original_amount=amount,
-                discount_amount=0,  # 可根据促销活动设置
-                total_amount=amount,
-                total_points=0,  # 根据商品设置
-                currency="CNY",
-                order_status=0,  # 待支付
-                payment_channel="WECHAT",
-                user_name=None,  # 可从用户信息获取
-                product_snapshot={
-                    "name": product_name,
-                    "price": amount,
-                    "id": product_id
-                },
-                client_ip=request_ctx.get_context().get("ip_address") or "127.0.0.1",  # 添加默认值并修复逗号
-                remark=f"微信公众号购买 {product_name}"
-            )
+            new_order = {}
+            # new_order = MetaOrder(
+            #     order_no=order_no,  # 订单编号，由时间戳和随机数生成
+            #     order_type="PACKAGE",  # 或根据商品类型设置
+            #     user_id=uuid.UUID(user_id),
+            #     product_id=uuid.UUID(product_id),
+            #     original_amount=amount,
+            #     discount_amount=0,  # 可根据促销活动设置
+            #     total_amount=amount,
+            #     total_points=0,  # 根据商品设置
+            #     currency="CNY",
+            #     order_status=0,  # 待支付
+            #     payment_channel="WECHAT",
+            #     user_name=None,  # 可从用户信息获取
+            #     product_snapshot={
+            #         "name": product_name,
+            #         "price": amount,
+            #         "id": product_id
+            #     },
+            #     client_ip=request_ctx.get_context().get("ip_address") or "127.0.0.1",  # 添加默认值并修复逗号
+            #     remark=f"微信公众号购买 {product_name}"
+            # )
             
-            db.add(new_order)
+            # db.add(new_order)
             await db.commit()
             await db.refresh(new_order)
             
             return {
-                "order_id": str(new_order.id),
+                # "order_id": str(new_order.id),
                 "order_no": order_no,
                 "amount": amount,
                 "product_name": product_name

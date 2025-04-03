@@ -73,7 +73,8 @@ async def extract_media_content(
         source = request_ctx.get_source()
         user_id = request_ctx.get_user_id()
         user_name = request_ctx.get_user_name()
-        ip_address = request.client.host if hasattr(request, "client") else None
+        # 获取客户端IP地址，处理request.client可能为None的情况
+        ip_address = request.client.host if request.client and hasattr(request.client, "host") else None
         
         logger.info(
             f"接收媒体提取请求: {extract_request.url}",
@@ -87,7 +88,7 @@ async def extract_media_content(
         
         # 提取媒体内容
         media_content = await media_service.extract_media_content(
-            url=extract_request.url,
+            url=str(extract_request.url),
             extract_text=extract_request.extract_text,
             include_comments=extract_request.include_comments
         )
@@ -107,7 +108,7 @@ async def extract_media_content(
         response = MediaExtractResponse(
             code=200,
             message="成功提取媒体内容",
-            data=media_content,
+            data=MediaContentResponse(**media_content) if media_content else None,
             request_context=request_context
         )
         

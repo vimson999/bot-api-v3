@@ -68,3 +68,26 @@ class ProductService:
             logger.error(f"获取商品列表失败: {str(e)}", exc_info=True)
             # 返回空列表而不是抛出异常，避免整个请求失败
             return []
+
+
+    @gate_keeper()
+    @log_service_call()
+    async def get_product_by_id(self, product_id: str, db: AsyncSession):
+        """
+        根据商品ID获取商品信息
+        
+        Args:
+            product_id: 商品ID
+            db: 数据库会话
+            
+        Returns:
+            MetaProduct: 商品对象或None
+        """
+        try:
+            query = select(MetaProduct).where(MetaProduct.id == product_id)
+            result = await db.execute(query)
+            product = result.scalar_one_or_none()
+            return product
+        except Exception as e:
+            logger.error(f"获取商品信息失败: {str(e)}")
+            return None

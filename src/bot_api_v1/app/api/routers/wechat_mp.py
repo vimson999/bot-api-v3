@@ -104,7 +104,14 @@ async def wechat_mp_callback(
             
             return PlainTextResponse(content="success")  
         elif event.Event.lower() == "click":
-            await wechat_service.handle_menu_click_event(event.EventKey, event.FromUserName,db)
+            # 确保 EventKey 不为 None 再传入
+            if event.EventKey:
+                await wechat_service.handle_menu_click_event(event.EventKey, event.FromUserName, db)
+            else:
+                logger.warning(
+                    "菜单点击事件 EventKey 为空",
+                    extra={"openid": event.FromUserName}
+                )
             return PlainTextResponse(content="success")  
         else:
             logger.info(
@@ -181,7 +188,7 @@ async def verify_wechat_mp(
 @router.get("/product/list")
 @TollgateConfig(
     title="展示商品",
-    type="wechat_mp_prodcut_list",
+    type="wechat_mp_product_list",
     base_tollgate="20",
     current_tollgate="1",
     plat="wechat_mp"
@@ -422,7 +429,7 @@ async def get_order_detail(
             "order_no": order_info.order_no,
             "amount": float(order_info.total_amount),
             "status": order_info.order_status,
-            "product_name": order_info.product_snapshot.get("name", "未知商品") if order_info.product_snapshot else "未知商品",
+            # "product_name": order_info.product_snapshot.get("name", "未知商品") if order_info.product_snapshot else "未知商品",
             "created_at": order_info.created_at.isoformat() if order_info.created_at else None
         }
         
