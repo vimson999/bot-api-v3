@@ -10,12 +10,17 @@ import uuid
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timedelta
 
+import secrets  # 添加到文件顶部
+
+import hashlib  # 添加这一行
 import aiohttp
 import httpx
 import jwt
 from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import P
 
+from bot_api_v1.app.services.business.order_service import OrderService
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.core.cache import cache_result, script_cache
@@ -41,11 +46,17 @@ class WechatService:
         """初始化微信服务"""
         self.appid = settings.WECHAT_MINI_APPID
         self.secret = settings.WECHAT_MINI_SECRET
+
+        self.mp_id = settings.WECHAT_MP_APPID
+        self.mp_secret = settings.WECHAT_MP_SECRET
+        self.mp_token = settings.WECHAT_MP_TOKEN  # 添加这一行
+        
         self.token_secret = settings.JWT_SECRET_KEY
         self.token_algorithm = "HS256"
         self.token_expires = 7  # 7天
 
         self.points_service = PointsService()
+        self.order_service = OrderService()  # 添加OrderService实例
 
     
     @gate_keeper()
@@ -1192,6 +1203,14 @@ class WechatService:
         """
         url = f"https://api.weixin.qq.com/cgi-bin/menu/create?access_token={access_token}"
         
+        from urllib.parse import quote
+        
+        product_list_path = f"{settings.DOMAIN_API_URL}/api/wechat_mp/product/list"
+        # 确保URL正确编码 - 这是关键修复点
+        encoded_uri = quote(product_list_path, safe='')      
+        # 构建完整的菜单URL
+        menu_url = f"https://open.weixin.qq.com/connect/oauth2/authorize?appid={self.mp_id}&redirect_uri={encoded_uri}&response_type=code&scope=snsapi_userinfo&state=shop#wechat_redirect"
+
         # 定义菜单结构
         menu_data = {
             "button": [
@@ -1212,6 +1231,11 @@ class WechatService:
                             "type": "click",
                             "name": "爷充值",
                             "key": "RECHARGE"
+                        },
+                        {
+                            "type": "view",
+                            "name": "土豪通道",
+                            "url": menu_url
                         }
                     ]
                 },
@@ -1352,7 +1376,7 @@ class WechatService:
             )
             
             # 3. 生成新的API KEY
-            new_api_key = str(uuid.uuid4()).replace("-", "")
+            new_api_key = secrets.token_hex(32)  # 生成更安全的随机令牌
             expires_at = datetime.now() + timedelta(days=365)  # 30天后过期
             
             # 4. 创建新的API KEY记录
@@ -1437,3 +1461,244 @@ class WechatService:
         except Exception as e:
             logger.error(f"处理领取福利请求时出错: {str(e)}", exc_info=True)
             return "领取福利失败，请稍后重试"
+
+
+
+    @gate_keeper()
+    @log_service_call()
+    async def get_mp_user_info_from_code_h5(self, code: str) -> Dict[str, Any]:
+        """
+        通过code获取微信公众号用户信息(H5网页授权)
+        """
+        try:
+            # 获取access_token
+            token_url = f"https://api.weixin.qq.com/sns/oauth2/access_token?appid={self.mp_id}&secret={self.mp_secret}&code={code}&grant_type=authorization_code"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(token_url)
+                result = response.json()
+            
+            if "errcode" in result:
+                raise WechatError(f"获取access_token失败: {result.get('errmsg', '未知错误')}")
+            
+            # 获取用户信息
+            user_url = f"https://api.weixin.qq.com/sns/userinfo?access_token={result['access_token']}&openid={result['openid']}&lang=zh_CN"
+            async with httpx.AsyncClient() as client:
+                response = await client.get(user_url)
+                user_info = response.json()
+            
+            if "errcode" in user_info:
+                raise WechatError(f"获取用户信息失败: {user_info.get('errmsg', '未知错误')}")
+            
+            return user_info
+            
+        except Exception as e:
+            logger.error(f"获取微信公众号用户信息失败: {str(e)}")
+            raise WechatError("获取用户信息失败")
+
+    @gate_keeper()
+    @log_service_call()
+    async def generate_h5_token(self, openid: str) -> str:
+        """
+        生成H5网页授权token
+        """
+        payload = {
+            "sub": str(uuid.uuid4()),  # 随机用户ID
+            "openid": openid,
+            "exp": datetime.utcnow() + timedelta(hours=2)  # 2小时有效期
+        }
+        return jwt.encode(payload, self.token_secret, algorithm=self.token_algorithm)
+
+    @gate_keeper()
+    @log_service_call()
+    async def verify_h5_token(self, token: str) -> Optional[str]:
+        """
+        验证H5网页授权token并返回openid
+        """
+        try:
+            payload = jwt.decode(token, self.token_secret, algorithms=[self.token_algorithm])
+            return payload.get("openid")
+        except jwt.ExpiredSignatureError:
+            raise WechatError("Token已过期")
+        except jwt.InvalidTokenError:
+            raise WechatError("无效的Token")
+        except Exception as e:
+            logger.error(f"验证Token失败: {str(e)}")
+            raise WechatError("验证Token失败")
+
+
+
+    # ... 现有代码 ...
+
+    @gate_keeper()
+    @log_service_call(method_type="wechat", tollgate="20-5")
+    async def create_payment_order(
+        self, 
+        user_id: str, 
+        openid: str, 
+        product_id: str, 
+        product_name: str,
+        amount: float, 
+        db: AsyncSession
+    ) -> Dict[str, Any]:
+        """
+        创建支付订单
+        
+        Args:
+            user_id: 用户ID
+            openid: 用户OpenID
+            product_id: 商品ID
+            product_name: 商品名称
+            amount: 支付金额
+            db: 数据库会话
+            
+        Returns:
+            Dict: 包含订单信息的字典
+        """
+        trace_key = request_ctx.get_trace_key()
+        logger.info(f"创建支付订单: user_id={user_id}, product_id={product_id}", 
+                    extra={"request_id": trace_key})
+        
+        try:
+            # 生成订单号
+            order_no = f"WX{int(time.time())}{secrets.randbelow(10000):04d}"
+            
+            # 创建订单记录
+            new_order = MetaOrder(
+                order_no=order_no,
+                order_type="PACKAGE",  # 或根据商品类型设置
+                user_id=uuid.UUID(user_id),
+                product_id=uuid.UUID(product_id),
+                original_amount=amount,
+                discount_amount=0,  # 可根据促销活动设置
+                total_amount=amount,
+                total_points=0,  # 根据商品设置
+                currency="CNY",
+                order_status=0,  # 待支付
+                payment_channel="WECHAT",
+                user_name=None,  # 可从用户信息获取
+                product_snapshot={
+                    "name": product_name,
+                    "price": amount,
+                    "id": product_id
+                },
+                client_ip=request_ctx.get_context().get("ip_address"),
+                remark=f"微信公众号购买 {product_name}"
+            )
+            
+            db.add(new_order)
+            await db.commit()
+            await db.refresh(new_order)
+            
+            return {
+                "order_id": str(new_order.id),
+                "order_no": order_no,
+                "amount": amount,
+                "product_name": product_name
+            }
+            
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"创建支付订单失败: {str(e)}", 
+                        exc_info=True, 
+                        extra={"request_id": trace_key})
+            raise WechatError(f"创建订单失败: {str(e)}")
+
+    @gate_keeper()
+    @log_service_call(method_type="wechat", tollgate="20-6")
+    async def create_jsapi_payment(
+        self, 
+        order_id: str, 
+        openid: str, 
+        db: AsyncSession
+    ) -> Dict[str, Any]:
+        """
+        创建JSAPI支付参数
+        
+        Args:
+            order_id: 订单ID
+            openid: 用户OpenID
+            db: 数据库会话
+            
+        Returns:
+            Dict: 包含JSAPI支付参数的字典
+        """
+        trace_key = request_ctx.get_trace_key()
+        logger.info(f"创建JSAPI支付参数: order_id={order_id}", 
+                    extra={"request_id": trace_key})
+        
+        try:
+            # 使用OrderService获取订单信息
+            order_info = await self.order_service.get_order_info(order_id, db)
+            if not order_info:
+                raise WechatError("订单不存在")
+            
+            if order_info.order_status != 0:
+                raise WechatError("订单状态不正确，无法支付")
+            
+            # 构建微信支付统一下单参数
+            # 实际项目中需要调用微信支付API
+            # 这里仅作示例
+            nonce_str = secrets.token_hex(16)
+            timestamp = str(int(time.time()))
+            
+            # 模拟调用微信支付API
+            # 实际项目中需要实现真实的微信支付接口调用
+            prepay_id = f"wx{timestamp}{secrets.randbelow(10000000):07d}"
+            
+            # 构建JSAPI支付参数
+            pay_params = {
+                "appId": self.mp_id,
+                "timeStamp": timestamp,
+                "nonceStr": nonce_str,
+                "package": f"prepay_id={prepay_id}",
+                "signType": "MD5"
+            }
+            
+            # 计算签名
+            # 实际项目中需要按照微信支付文档计算真实签名
+            sign_str = "&".join([f"{k}={pay_params[k]}" for k in sorted(pay_params.keys())])
+            sign_str += f"&key=YOUR_MERCHANT_KEY"  # 实际项目中使用真实的商户密钥
+            pay_params["paySign"] = hashlib.md5(sign_str.encode()).hexdigest().upper()
+            
+            # 更新订单状态为支付处理中
+            await self.order_service.update_order_status(order_id, 1, db=db)
+            
+            return pay_params
+            
+        except Exception as e:
+            logger.error(f"创建JSAPI支付参数失败: {str(e)}", 
+                        exc_info=True, 
+                        extra={"request_id": trace_key})
+            raise WechatError(f"创建支付参数失败: {str(e)}")
+
+
+    @gate_keeper()
+    @log_service_call(method_type="wechat", tollgate="20-7")
+    async def get_order_info(self, order_id: str, db: AsyncSession):
+        """
+        获取订单信息
+        
+        Args:
+            order_id: 订单ID
+            db: 数据库会话
+            
+        Returns:
+            MetaOrder: 订单对象
+        """
+        trace_key = request_ctx.get_trace_key()
+        
+        try:
+            # 查询订单信息
+            order_query = select(MetaOrder).where(
+                MetaOrder.id == uuid.UUID(order_id)
+            )
+            result = await db.execute(order_query)
+            order = result.scalar_one_or_none()
+            
+            return order
+            
+        except Exception as e:
+            logger.error(f"获取订单信息失败: {str(e)}", 
+                        exc_info=True, 
+                        extra={"request_id": trace_key})
+            return None

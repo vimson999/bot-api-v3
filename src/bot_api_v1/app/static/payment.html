@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>订单支付</title>
+    <link rel="stylesheet" href="/static/css/common.css">
+    <style>
+        .payment-container {
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .order-info {
+            background-color: #fff;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .order-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .order-row:last-child {
+            border-bottom: none;
+        }
+        .order-label {
+            color: #666;
+            font-size: 14px;
+        }
+        .order-value {
+            font-weight: bold;
+            color: #333;
+        }
+        .amount {
+            color: #ff6b6b;
+            font-size: 18px;
+        }
+        .pay-btn {
+            width: 100%;
+            background-color: #07c160;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 20px;
+            cursor: pointer;
+        }
+        .pay-btn:disabled {
+            background-color: #9fd6b3;
+            cursor: not-allowed;
+        }
+        .back-link {
+            display: block;
+            text-align: center;
+            margin-top: 15px;
+            color: #666;
+            text-decoration: none;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="back-icon" onclick="window.history.back()">
+            <svg viewBox="0 0 24 24" width="24" height="24">
+                <path fill="currentColor" d="M20,11V13H8L13.5,18.5L12.08,19.92L4.16,12L12.08,4.08L13.5,5.5L8,11H20Z"></path>
+            </svg>
+        </div>
+        <div class="title">订单支付</div>
+    </div>
+    
+    <div class="payment-container">
+        <div id="loading" class="loading">加载订单信息...</div>
+        
+        <div id="orderInfo" class="order-info" style="display: none;">
+            <div class="order-row">
+                <span class="order-label">订单编号</span>
+                <span id="orderNo" class="order-value">-</span>
+            </div>
+            <div class="order-row">
+                <span class="order-label">商品名称</span>
+                <span id="productName" class="order-value">-</span>
+            </div>
+            <div class="order-row">
+                <span class="order-label">支付金额</span>
+                <span id="amount" class="order-value amount">¥0.00</span>
+            </div>
+        </div>
+        
+        <button id="payBtn" class="pay-btn" disabled>微信支付</button>
+        <a href="javascript:window.history.back()" class="back-link">返回商品列表</a>
+    </div>
+    
+    <script>
+        // 获取URL参数
+        function getQueryParam(name) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(name);
+        }
+        
+        // 获取订单ID和token
+        const orderId = getQueryParam('order_id');
+        const token = getQueryParam('token');
+        let payParams = getQueryParam('pay_params');
+        
+        if (payParams) {
+            try {
+                payParams = JSON.parse(decodeURIComponent(payParams));
+            } catch (e) {
+                console.error('解析支付参数失败:', e);
+                payParams = null;
+            }
+        }
+        
+        // 加载订单信息
+        document.addEventListener('DOMContentLoaded', async () => {
+            if (!orderId || !token) {
+                alert('订单参数不完整，无法完成支付');
+                window.location.href = '/wechat_mp/products?token=' + token;
+                return;
+            }
+            
+            try {
+                // 获取订单详情
+                const response = await fetch(`/api/wechat_mp/order_detail?order_id=${orderId}&token=${token}`);
+                if (!response.ok) throw new Error('获取订单信息失败');
+                
+                const data = await response.json();
+                
+                if (data.code === 0 && data.data) {
+                    // 显示订单信息
+                    document.getElementById('loading').style.display = 'none';
+                    document.getElementById('orderInfo').style.display = 'block';
+                    
+                    const orderInfo = data.data;
+                    document.getElementById('orderNo').textContent = orderInfo.order_no || '-';
+                    document.getElementById('productName').textContent = orderInfo.product_name || '-';
+                    document.getElementById('amount').textContent = `¥${orderInfo.amount.toFixed(2)}`;
+                    
+                    // 启用支付按钮
+                    const payBtn = document.getElementById('payBtn');
+                    payBtn.disabled = false;
+                    
+                    // 绑定支付事件
+                    payBtn.addEventListener('click', () => {
+                        if (payParams) {
+                            // 调用微信支付
+                            callWechatPay(payParams);
+                        } else {
+                            alert('支付参数不完整，无法完成支付');
+                        }
+                    });
+                } else {
+                    throw new Error(data.message || '获取订单信息失败');
+                }
+            } catch (error) {
+                console.error('加载订单信息失败:', error);
+                document.getElementById('loading').textContent = '加载订单信息失败，请刷新重试';
+            }
+        });
+        
+        // 调用微信支付
+        function callWechatPay(params) {
+            if (typeof WeixinJSBridge === 'undefined') {
+                if (document.addEventListener) {
+                    document.addEventListener('WeixinJSBridgeReady', onBridgeReady, false);
+                } else if (document.attachEvent) {
+                    document.attachEvent('WeixinJSBridgeReady', onBridgeReady);
+                    document.attachEvent('onWeixinJSBridgeReady', onBridgeReady);
+                }
+            } else {
+                onBridgeReady(params);
+            }
+        }
+        
+        function onBridgeReady(params) {
+            WeixinJSBridge.invoke(
+                'getBrandWCPayRequest', 
+                params,
+                function(res) {
+                    if (res.err_msg === "get_brand_wcpay_request:ok") {
+                        // 支付成功
+                        window.location.href = `/wechat_mp/pay_success?order_id=${orderId}&token=${token}`;
+                    } else if (res.err_msg === "get_brand_wcpay_request:cancel") {
+                        // 用户取消支付
+                        alert('您已取消支付');
+                    } else {
+                        // 支付失败
+                        alert('支付失败，请重试');
+                        console.error('支付失败:', res.err_msg);
+                    }
+                }
+            );
+        }
+    </script>
+</body>
+</html>

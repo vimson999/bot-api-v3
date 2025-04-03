@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import asyncio
+from fastapi.staticfiles import StaticFiles
 
 from bot_api_v1.app.middlewares.logging_middleware import log_middleware
 from bot_api_v1.app.middlewares.request_counter import add_request_counter
@@ -17,13 +18,19 @@ from bot_api_v1.app.db.init_db import init_db, wait_for_db
 from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.middlewares.rate_limit import RateLimitMiddleware
 from bot_api_v1.app.api.routers import script
-# from bot_api_v1.app.api.routers import douyin  # 导入新的抖音路由
-from bot_api_v1.app.api.routers import points  # 导入新的抖音路由
 from bot_api_v1.app.api.routers import wechat_mp  # Import the media route
 
-from bot_api_v1.app.monitoring import setup_metrics, metrics_middleware, start_system_metrics_collector
+# from bot_api_v1.app.monitoring import setup_metrics, metrics_middleware, start_system_metrics_collector
 from bot_api_v1.app.api.routers import wechat  # Import the wechat router
 from bot_api_v1.app.services.business.wechat_service import WechatService  # 添加这行导入
+import os
+
+# 挂载静态文件目录
+
+# 找到项目根目录（假设是包含src的目录）
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../.."))
+static_directory = os.path.join(project_root, "src", "bot_api_v1", "app", "static")
+
 
 def create_app():
     """创建并配置FastAPI应用"""
@@ -73,14 +80,24 @@ def create_app():
     # 注册路由
     app.include_router(api_router, prefix=settings.API_PREFIX)
     app.include_router(script.router, prefix="/script")
-    # app.include_router(douyin.router, prefix="/douyin")  # 添加抖音路由
     app.include_router(wechat.router, prefix="/wechat")
-    app.include_router(points.router, prefix="/points")
     app.include_router(wechat_mp.router, prefix="/wechat_mp")
 
     # 添加新的媒体路由
     from bot_api_v1.app.api.routers import media
     app.include_router(media.router, prefix="/media")
+
+
+
+    logger.info(f"项目根目录: {project_root}")
+    logger.info(f"尝试挂载静态文件目录: {static_directory}")
+
+    # 确保目录存在再挂载
+    if os.path.exists(static_directory):
+        app.mount("/static", StaticFiles(directory=static_directory), name="static")
+    else:
+        logger.error(f"静态文件目录不存在: {static_directory}")
+
 
     # 注册异常处理器
     app.add_exception_handler(Exception, http_exception_handler)

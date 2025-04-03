@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_DAYS: int = int(os.getenv("JWT_EXPIRATION_DAYS", "7"))
     
+
+    DOMAIN_API_URL : str = os.getenv("DOMAIN_API_URL", "http://iw6i1vjj93ml.guyubao.com")
+    H5_FRONTEND_URL: str = os.getenv("H5_FRONTEND_URL", "http://iw6i1vjj93ml.guyubao.com/h5")  # 前端H5页面地址
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

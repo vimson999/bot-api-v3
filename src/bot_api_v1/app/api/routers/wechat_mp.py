@@ -5,6 +5,8 @@
 """
 from typing import Dict, Any, Optional
 
+
+from bot_api_v1.app.services.business.order_service import OrderService, OrderError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,12 +17,19 @@ from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.core.exceptions import CustomException
 from bot_api_v1.app.db.session import get_db
 from bot_api_v1.app.services.business.wechat_service import WechatService, WechatError
+from bot_api_v1.app.services.business.product_service import ProductService
+
 from bot_api_v1.app.utils.decorators.tollgate import TollgateConfig
 
 from fastapi import Query, HTTPException
 from fastapi.responses import PlainTextResponse
 import hashlib
 import xml.etree.ElementTree as ET
+import urllib.parse
+
+from fastapi.responses import RedirectResponse
+from bot_api_v1.app.core.config import settings
+
 
 router = APIRouter(prefix='/wechat_mp',  tags=["微信公众号"])
 
@@ -168,196 +177,265 @@ async def verify_wechat_mp(
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-# def check_signature(token: str, signature: str, timestamp: str, nonce: str) -> bool:
-#     """
-#     Verify the signature from WeChat server
+@router.get("/product/list")
+@TollgateConfig(
+    title="展示商品",
+    type="wechat_mp_prodcut_list",
+    base_tollgate="20",
+    current_tollgate="1",
+    plat="wechat_mp"
+)
+async def handle_product_list(
+    code: str = Query(..., description="微信授权code"),
+    state: str = Query(..., description="自定义state参数"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    处理微信授权后的商品列表请求
     
-#     Args:
-#         token (str): Token configured in WeChat official account settings
-#         signature (str): Signature from WeChat server
-#         timestamp (str): Timestamp from WeChat server
-#         nonce (str): Random number from WeChat server
-    
-#     Returns:
-#         bool: Whether the signature is valid
-#     """
-#     # 1. Create a list with token, timestamp, and nonce
-#     tmp_list = [token, timestamp, nonce]
-    
-#     # 2. Sort the list
-#     tmp_list.sort()
-    
-#     # 3. Join the sorted list into a single string
-#     tmp_str = ''.join(tmp_list)
-    
-#     # 4. SHA1 hash the string
-#     sha1_str = hashlib.sha1(tmp_str.encode('utf-8')).hexdigest()
-    
-#     # 5. Compare the hashed string with the signature
-#     return sha1_str == signature
-
-
-# @router.get("/wx")
-# async def wechat_verify(
-#     signature: str = Query(..., description="微信加密签名"),
-#     timestamp: str = Query(..., description="时间戳"),
-#     nonce: str = Query(..., description="随机数"),
-#     echostr: str = Query(..., description="随机字符串")
-# ):
-#     """
-#     微信公众号服务器配置验证接口
-    
-#     处理微信服务器发来的验证请求，验证服务器配置的有效性
-    
-#     Args:
-#         signature: 微信加密签名
-#         timestamp: 时间戳
-#         nonce: 随机数
-#         echostr: 验证成功后需要返回的随机字符串
-    
-#     Returns:
-#         成功返回echostr，失败返回错误信息
-#     """
-#     try:
-#         # 获取配置的token
-#         token = settings.WECHAT_MP_TOKEN
+    流程：
+    1. 通过code获取用户openid
+    2. 生成令牌
+    3. 重定向到静态HTML页面
+    """
+    try:        
+        # 1. 通过code获取access_token和openid
+        user_info = await wechat_service.get_mp_user_info_from_code_h5(code)
+        openid = user_info.get('openid')
         
-#         if not token:
-#             logger.error("未配置微信公众号Token")
-#             raise HTTPException(
-#                 status_code=500, 
-#                 detail="未配置微信公众号Token"
-#             )
-
-#         # 读取原始XML数据
-#         xml_data = await request.body()
+        if not openid:
+            logger.error("获取用户openid失败")
+            # 重定向到错误页面
+            return RedirectResponse(url=f"/static/error.html?code=401&message={urllib.parse.quote('授权失败')}")
         
-#         # 验证签名
-#         if check_signature(token, signature, timestamp, nonce):
-#             logger.info("微信公众号服务器验证成功")
-#             return PlainTextResponse(content=echostr)
-#         else:
-#             logger.warning(
-#                 "微信公众号签名验证失败",
-#                 extra={
-#                     "signature": signature,
-#                     "timestamp": timestamp,
-#                     "nonce": nonce
-#                 }
-#             )
-#             raise HTTPException(
-#                 status_code=403, 
-#                 detail="签名验证失败"
-#             )
-            
-#     except Exception as e:
-#         logger.error(f"处理微信验证请求时出错: {str(e)}", exc_info=True)
-#         raise HTTPException(
-#             status_code=500,
-#             detail=f"服务器内部错误: {str(e)}"
-#         )
-
-
-
-
-# @router.post("/wx")
-# async def handle_wechat_message(
-#     request: Request,
-#     wechat_service: WechatService = Depends(WechatService)
-# ):
-#     """
-#     Handle incoming messages from WeChat server
-#     """
-#     # 读取原始XML数据
-#     xml_data = await request.body()
-    
-#     try:
-#         # 解析XML消息
-#         msg = parse_xml(xml_data)
+        # 2. 生成JWT令牌，包含用户身份信息
+        token = await wechat_service.generate_h5_token(openid)
         
-#         # 处理订阅事件
-#         if msg.get('MsgType') == 'event' and msg.get('Event') == 'subscribe':
-#             # 获取用户的OpenID
-#             open_id = msg['FromUserName']
-            
-#             # 获取Access Token
-#             access_token = await wechat_service._get_mp_access_token()
-#             if access_token:
-#                 # 发送模板消息
-#                 send_template_message(access_token, open_id)
-            
-#             # 回复文本消息
-#             welcome_msg = "感谢关注！我们将为您提供最佳服务。回复以下关键词获取更多信息：\n1. 帮助\n2. 服务\n3. 优惠"
-#             return Response(content=generate_text_response_xml(msg, welcome_msg), media_type="application/xml")
+        # 3. 重定向到静态HTML页面
+        return RedirectResponse(url=f"/static/product_list.html?token={token}&openid={openid}")
+    except WechatError as e:
+        logger.error(f"微信授权处理失败: {str(e)}")
+        return RedirectResponse(url=f"/static/error.html?code=400&message={urllib.parse.quote(str(e))}")
+    except Exception as e:
+        logger.error(f"处理商品列表请求失败: {str(e)}", exc_info=True)
+        return RedirectResponse(url=f"/static/error.html?code=500&message={urllib.parse.quote('服务异常')}")
+
+# 添加API端点提供商品数据
+@router.get("/products", response_model=Dict[str, Any])
+async def get_products(
+    token: str = Query(..., description="用户令牌"),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取商品列表数据API"""
+    try:
+        # 验证令牌
+        # wechat_service = WechatService()
+        # openid = await wechat_service.verify_h5_token(token)
         
-#         # 处理其他类型的消息
-#         return Response(content="success", media_type="text/plain")
+        # if not openid:
+        #     raise HTTPException(status_code=401, detail="无效的令牌")
+        
+        # # 获取用户信息
+        # user_info = await wechat_service._get_mp_user_info_from_wechat(openid)
+        
+        # 获取商品列表
+        product_service = ProductService()
+        products = await product_service.get_product_list(db)
+        
+        return {
+            # "user_info": user_info,
+            "products": products
+        }
+    except Exception as e:
+        logger.error(f"获取商品列表失败: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务异常")
+
+
+
+# 添加创建订单的请求模型
+class CreateOrderRequest(BaseModel):
+    product_id: str = Field(..., description="商品ID")
+    token: str = Field(..., description="用户令牌")
+    openid: Optional[str] = Field(None, description="用户OpenID")
+
+order_service = OrderService()
+@router.post(
+    "/create_order",
+    response_model=BaseResponse,
+    description="创建微信支付订单",
+    summary="创建微信支付订单"
+)
+@TollgateConfig(
+    title="创建微信支付订单",
+    type="wechat_mp_create_order",
+    base_tollgate="20",
+    current_tollgate="1",
+    plat="wechat_mp"
+)
+async def create_order(
+    request: CreateOrderRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    创建微信支付订单
+    """
+    trace_key = request_ctx.get_trace_key()
     
-#     except Exception as e:
-#         print(f"Error processing message: {e}")
-#         return Response(content="error", media_type="text/plain")
+    try:
+        # 验证token
+        user_info = await wechat_service.verify_token(request.token, db)
+        
+        # 获取商品信息
+        product_service = ProductService()
+        product = await product_service.get_product_by_id(request.product_id, db)
+        
+        if not product:
+            raise HTTPException(status_code=404, detail="商品不存在")
+        
+        # 使用OrderService创建订单
+        order_data = await order_service.create_order(
+            user_id=user_info["user_id"],
+            openid=user_info["openid"],
+            product_id=request.product_id,
+            product_name=product.name,
+            amount=product.sale_price,
+            db=db
+        )
+        
+        return BaseResponse(
+            code=0,
+            message="订单创建成功",
+            data={"order_id": order_data["order_id"]}
+        )
+        
+    except Exception as e:
+        logger.error(
+            f"创建订单失败: {str(e)}",
+            exc_info=True,
+            extra={"request_id": trace_key}
+        )
+        return BaseResponse(
+            code=500,
+            message=f"创建订单失败: {str(e)}",
+            data=None
+        )
 
-
-
-# def parse_xml(xml_data: bytes) -> Dict[str, str]:
-#     """
-#     Parse XML message from WeChat
-#     """
-#     root = ET.fromstring(xml_data)
-#     return {child.tag: child.text for child in root}
-
-
-
-# def generate_text_response_xml(msg: Dict[str, str], content: str) -> str:
-#     """
-#     Generate XML response for text message
-#     """
-#     return f"""
-# <xml>
-#     <ToUserName><![CDATA[{msg['FromUserName']}]]></ToUserName>
-#     <FromUserName><![CDATA[{msg['ToUserName']}]]></FromUserName>
-#     <CreateTime>{int(time.time())}</CreateTime>
-#     <MsgType><![CDATA[text]]></MsgType>
-#     <Content><![CDATA[{content}]]></Content>
-# </xml>
-# """
-
-
-
-# def send_template_message(access_token: str, open_id: str, template_id: Optional[str] = '0QbSRPz7YAIWxtgcNmC4SxrEEXlpOyji33zkKDQ6Xnc'):
-#     """
-#     Send template message to new subscriber
-#     """
-#     url = f"https://api.weixin.qq.com/cgi-bin/message/template/send?access_token={access_token}"
+@router.get(
+    "/pay",
+    description="微信支付页面",
+    summary="微信支付页面"
+)
+async def payment_page(
+    order_id: str = Query(..., description="订单ID"),
+    token: str = Query(..., description="用户令牌"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    微信支付页面
+    """
+    trace_key = request_ctx.get_trace_key()
     
-#     # 模板消息数据
-#     template_data = {
-#         "touser": open_id,
-#         "template_id": template_id,  # 在微信公众号后台配置的模板ID
-#         # "url": "https://yourwebsite.com",  # 可选的跳转链接
-#         "data": {
-#             "userName": {
-#                 "value": "欢迎关注我们！",
-#                 "color": "#173177"
-#             }
-#         }
-#     }
+    try:
+        # 验证token
+        user_info = await wechat_service.verify_token(token, db)
+        
+        # 使用OrderService获取订单信息
+        order_info = await order_service.get_order_info(order_id, db)
+        
+        if not order_info:
+            raise HTTPException(status_code=404, detail="订单不存在")
+        
+        # 检查订单是否属于当前用户
+        if str(order_info.user_id) != user_info["user_id"]:
+            raise HTTPException(status_code=403, detail="无权访问此订单")
+        
+        # 创建微信支付参数
+        pay_params = await wechat_service.create_jsapi_payment(
+            order_id=order_id,
+            openid=user_info["openid"],
+            db=db
+        )
+        
+        # 返回支付页面
+        return RedirectResponse(
+            url=f"/static/html/payment.html?order_id={order_id}&token={token}&pay_params={urllib.parse.quote(json.dumps(pay_params))}"
+        )
+        
+    except Exception as e:
+        logger.error(
+            f"获取支付页面失败: {str(e)}",
+            exc_info=True,
+            extra={"request_id": trace_key}
+        )
+        return RedirectResponse(url=f"/static/html/error.html?message=支付页面加载失败")
+
+
+
+# ... 现有代码 ...
+
+
+@router.get(
+    "/order_detail",
+    response_model=BaseResponse,
+    description="获取订单详情",
+    summary="获取订单详情"
+)
+async def get_order_detail(
+    order_id: str = Query(..., description="订单ID"),
+    token: str = Query(..., description="用户令牌"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取订单详情
+    """
+    trace_key = request_ctx.get_trace_key()
     
-#     try:
-#         response = requests.post(url, json=template_data)
-#         return response.json()
-#     except Exception as e:
-#         print(f"Error sending template message: {e}")
-#         return None
+    try:
+        # 验证token
+        user_info = await wechat_service.verify_token(token, db)
+        
+        # 使用OrderService获取订单信息
+        order_info = await order_service.get_order_info(order_id, db)
+        
+        if not order_info:
+            return BaseResponse(
+                code=404,
+                message="订单不存在",
+                data=None
+            )
+        
+        # 检查订单是否属于当前用户
+        if str(order_info.user_id) != user_info["user_id"]:
+            return BaseResponse(
+                code=403,
+                message="无权访问此订单",
+                data=None
+            )
+        
+        # 构建订单详情
+        order_detail = {
+            "order_id": str(order_info.id),
+            "order_no": order_info.order_no,
+            "amount": float(order_info.total_amount),
+            "status": order_info.order_status,
+            "product_name": order_info.product_snapshot.get("name", "未知商品") if order_info.product_snapshot else "未知商品",
+            "created_at": order_info.created_at.isoformat() if order_info.created_at else None
+        }
+        
+        return BaseResponse(
+            code=0,
+            message="获取订单详情成功",
+            data=order_detail
+        )
+        
+    except Exception as e:
+        logger.error(
+            f"获取订单详情失败: {str(e)}",
+            exc_info=True,
+            extra={"request_id": trace_key}
+        )
+        return BaseResponse(
+            code=500,
+            message=f"获取订单详情失败: {str(e)}",
+            data=None
+        )
