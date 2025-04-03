@@ -18,7 +18,6 @@ import httpx
 import jwt
 from sqlalchemy import select, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.background import P
 
 from bot_api_v1.app.services.business.order_service import OrderService
 from bot_api_v1.app.core.logger import logger
@@ -1654,11 +1653,9 @@ class WechatService:
                 "signType": "MD5"
             }
             
-            # 计算签名
-            # 实际项目中需要按照微信支付文档计算真实签名
             sign_str = "&".join([f"{k}={pay_params[k]}" for k in sorted(pay_params.keys())])
-            sign_str += f"&key=YOUR_MERCHANT_KEY"  # 实际项目中使用真实的商户密钥
-            pay_params["paySign"] = hashlib.md5(sign_str.encode()).hexdigest().upper()
+            sign_str += f"&key={settings.WECHAT_MERCHANT_KEY}"  # 使用配置中的商户密钥
+            pay_params["paySign"] = hashlib.md5(sign_str.encode()).hexdigest().upper()         
             
             # 更新订单状态为支付处理中
             await self.order_service.update_order_status(order_id, 1, db=db)

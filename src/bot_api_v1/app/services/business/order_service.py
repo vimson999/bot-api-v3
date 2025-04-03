@@ -84,7 +84,7 @@ class OrderService:
                     "price": amount,
                     "id": product_id
                 },
-                client_ip=request_ctx.get_context().get("ip_address"),
+                client_ip=request_ctx.get_context().get("ip_address") or "127.0.0.1",  # 添加默认值并修复逗号
                 remark=f"微信公众号购买 {product_name}"
             )
             
@@ -137,14 +137,15 @@ class OrderService:
                         extra={"request_id": trace_key})
             return None
     
+       
     @gate_keeper()
     @log_service_call(method_type="order", tollgate="30-3")
     async def update_order_status(
         self, 
         order_id: str, 
         status: int, 
-        transaction_id: Optional[str] = None,
-        db: AsyncSession
+        db: AsyncSession,
+        transaction_id: Optional[str] = None
     ) -> bool:
         """
         更新订单状态
@@ -152,8 +153,8 @@ class OrderService:
         Args:
             order_id: 订单ID
             status: 订单状态
-            transaction_id: 交易ID
             db: 数据库会话
+            transaction_id: 交易ID（可选）
             
         Returns:
             bool: 更新是否成功
@@ -184,31 +185,20 @@ class OrderService:
             logger.error(f"更新订单状态失败: {str(e)}", 
                         exc_info=True, 
                         extra={"request_id": trace_key})
-            return False
-    
+            return False   
+
+
     @gate_keeper()
     @log_service_call(method_type="order", tollgate="30-4")
     async def get_user_orders(
         self, 
         user_id: str, 
+        db: AsyncSession,
         status: Optional[int] = None,
         page: int = 1,
-        page_size: int = 10,
-        db: AsyncSession
+        page_size: int = 10
     ) -> List[Dict[str, Any]]:
-        """
-        获取用户订单列表
         
-        Args:
-            user_id: 用户ID
-            status: 订单状态
-            page: 页码
-            page_size: 每页数量
-            db: 数据库会话
-            
-        Returns:
-            List[Dict]: 订单列表
-        """
         trace_key = request_ctx.get_trace_key()
         
         try:
@@ -236,7 +226,7 @@ class OrderService:
                     "order_no": order.order_no,
                     "amount": float(order.total_amount),
                     "status": order.order_status,
-                    "product_name": order.product_snapshot.get("name", "未知商品") if order.product_snapshot else "未知商品",
+                    # "product_name": order.product_snapshot.get("name", "未知商品") if order.product_snapshot else "未知商品",
                     "created_at": order.created_at.isoformat() if order.created_at else None
                 }
                 order_list.append(order_data)
