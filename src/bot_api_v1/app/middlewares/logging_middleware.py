@@ -52,11 +52,13 @@ async def init_request_context(request: Request, trace_key: str):
     tollgate_config = get_tollgate_config_for_route(request)
     base_tollgate = "10"  # 默认值
     current_tollgate = "1"  # 默认值
+    type="api"
     
     if tollgate_config:
         base_tollgate = tollgate_config.get("base_tollgate", "10")
         current_tollgate = tollgate_config.get("current_tollgate", "1")
-    
+        type=tollgate_config.get("type", "api")
+
     # 构建上下文数据
     context_data = {
         'trace_key': trace_key,
@@ -68,6 +70,7 @@ async def init_request_context(request: Request, trace_key: str):
         'ip_address': client_ip,
         'base_tollgate': base_tollgate,
         'current_tollgate': current_tollgate,
+        'type': type,
         'request_time': datetime.now().isoformat(),
     }
     

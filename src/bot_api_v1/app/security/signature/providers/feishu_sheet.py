@@ -229,9 +229,9 @@ def rsa_verify_sign(data, sign_data, public_key, debug=False):
         
         duration = time.time() - start_time
         if valid:
-            logger.info(f"[{trace_id}] 签名验证成功! 耗时: {duration:.4f}秒")
+            logger.info_to_db(f"[{trace_id}] 签名验证成功!，data is {data},sign data is {sign_data} ,耗时: {duration:.4f}秒")
         else:
-            logger.warning(f"[{trace_id}] 签名验证失败! 耗时: {duration:.4f}秒")
+            logger.warning(f"[{trace_id}] 签名验证失败! ，data is {data},sign data is {sign_data} ,耗时: {duration:.4f}秒")
             
         # 性能监控
         if duration > 0.5:  # 超过500ms视为慢操作

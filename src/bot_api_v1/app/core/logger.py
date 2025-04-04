@@ -253,6 +253,63 @@ class LoggerInterface:
         
         return extra
 
+    def info_to_db(self, msg, *args, **kwargs):
+        """记录ERROR级别日志，同时保存到数据库"""
+        # 1. 获取上下文信息
+        extra = self._get_extra(kwargs)
+        trace_key = extra.get('request_id', 'system')
+        exc_info = kwargs.get('exc_info', False)
+        
+        # 2. 记录到文本日志
+        self._logger.bind(**extra).info(msg)
+        
+        # 3. 获取其他日志相关信息
+        method_name = kwargs.get('method_name', extra.get('method_name', 'unknown'))
+        source = extra.get('source', 'api')
+        app_id = extra.get('app_id', None)
+        user_uuid = extra.get('user_id', None)
+        user_nickname = extra.get('user_name', None)
+        ip_address = extra.get('ip_address', None)
+        
+        # 确定tollgate值，错误通常使用base-9格式
+        current_tollgate = extra.get('current_tollgate', '10')
+        type = extra.get('type', 'api')
+
+
+        # 4. 使用全局任务系统注册异步日志任务，但不等待完成
+        from bot_api_v1.app.tasks.base import register_task, TASK_TYPE_LOG
+        from bot_api_v1.app.services.log_service import LogService
+        
+        try:# 注册异步任务保存日志到数据库
+            register_task(
+                name=f"log_to_db:{method_name}",
+                coro=LogService.save_log(
+                    trace_key=trace_key,
+                    method_name=method_name,
+                    source=source,
+                    app_id=app_id,
+                    user_uuid=user_uuid,
+                    user_nickname=user_nickname,
+                    entity_id=None,
+                    type=type,
+                    tollgate=current_tollgate,
+                    level="info",
+                    para=None,
+                    header=None,
+                    body='',  # 使用包含详细信息和堆栈跟踪的完整错误信息
+                    memo=msg,  # memo仍保持简短以便于快速概览
+                    ip_address=ip_address
+                ),
+                timeout=60,  # 设置日志超时时间为60秒
+                task_type=TASK_TYPE_LOG
+            )
+        except Exception as log_error:
+            # 如果注册任务失败，记录到文本日志但不抛出异常
+            self._logger.bind(**extra).warning(
+                f"Error logging to database failed: {str(log_error)}"
+            )
+
+
 
 # 初始化logger并创建接口
 _base_logger = setup_logger()

@@ -143,7 +143,7 @@ def create_app():
                     # 直接更新设置值
                     settings.CURRENT_WECHAT_MP_MENU_VERSION = settings.TARGET_WECHAT_MP_MENU_VERSION
                     
-                    logger.info(f"微信菜单已更新到版本 {settings.TARGET_WECHAT_MP_MENU_VERSION}")
+                    logger.info_to_db(f"成功创建微信公众号菜单,微信菜单已更新到版本 {settings.TARGET_WECHAT_MP_MENU_VERSION}")
                 except Exception as e:
                     logger.error(f"更新微信菜单失败: {str(e)}")
 

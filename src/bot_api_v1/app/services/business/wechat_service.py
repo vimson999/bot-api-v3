@@ -915,8 +915,8 @@ class WechatService:
             db: 数据库会话
         """
         trace_key = request_ctx.get_trace_key()
-        logger.info(
-            f"处理菜单点击事件: {event_key}",
+        logger.info_to_db(
+            f"处理菜单点击事件: {event_key}，用户: {openid},时间: {datetime.now()}",
             extra={"request_id": trace_key, "openid": openid, "event_key": event_key}
         )
         
@@ -1050,7 +1050,7 @@ class WechatService:
                     logger.error(f"发送文本消息失败: {result}")
                     raise WechatError(f"发送文本消息失败: {result.get('errmsg', '未知错误')}")
                     
-                logger.info(f"成功发送文本消息给用户: {openid}")
+                logger.info_to_db(f"成功发送文本消息给用户: {openid}, 内容: {text}")
                 
         except (KeyError, TypeError) as e:
             # 处理结果解析错误
@@ -1149,7 +1149,7 @@ class WechatService:
                     logger.error(f"创建菜单失败: {result}")
                     raise WechatError(f"创建菜单失败: {result.get('errmsg', '未知错误')}")
                 
-                logger.info("成功创建微信公众号菜单")
+                # logger.info_to_db("成功创建微信公众号菜单")
                 
         except Exception as e:
             logger.error(f"创建菜单时出错: {str(e)}", exc_info=True)

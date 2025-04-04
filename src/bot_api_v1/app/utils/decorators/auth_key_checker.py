@@ -15,6 +15,7 @@ from bot_api_v1.app.models.rel_points_transaction import RelPointsTransaction
 from bot_api_v1.app.db.session import get_db, async_session_maker
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
+import time  # 确保导入time模块
 
 
 def require_auth_key(exempt: bool = False):
@@ -322,11 +323,11 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
             await db.commit()
             await db.refresh(points_account)
             
-            logger.info(f"已创建用户积分账户: {points_account.id}")
+            logger.info_to_db(f"已创建用户积分账户: {points_account.id}")
             
             # 如果账户余额为0，提示用户充值
             error_msg = "您的积分账户余额为0，请先充值后再使用服务"
-            logger.warning(error_msg)
+            logger.info_to_db(error_msg)
             if not exempt:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -337,7 +338,7 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
         # 如果账户余额为0，提示用户充值
         if points_account.available_points <= 0:
             error_msg = "您的积分账户余额不足，请先充值后再使用服务"
-            logger.warning(error_msg)
+            logger.info_to_db(error_msg)
             if not exempt:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -352,7 +353,7 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
             user_id=str(user_id)
         )
         
-        logger.info(f"用户积分账户正常: ID={points_account.id}, 可用积分={points_account.available_points}")
+        logger.info_to_db(f"用户积分账户正常: ID={points_account.id}, 可用积分={points_account.available_points}")
         return False
         
     except HTTPException:
@@ -391,7 +392,7 @@ async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: R
     
     # 如果没有积分消耗或缺少账户ID，跳过处理
     if not consumed_points or not account_id or not user_id:
-        logger.info(f"无需扣减积分: consumed_points={consumed_points}, account_id={account_id}")
+        logger.info_to_db(f"无需扣减积分: consumed_points={consumed_points}, account_id={account_id}")
         return False
     
     # 不能消耗超过用户可用积分
@@ -412,15 +413,17 @@ async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: R
         except ValueError as e:
             logger.error(f"无效的UUID格式: {e}")
             return False
-        
-        # 事务处理
-        async with db.begin():
+
+        # 检查数据库会话是否已经在事务中
+        in_transaction = db.in_transaction()
+        if in_transaction:
             # 1. 更新用户积分账户
             update_result = await db.execute(
                 update(MetaUserPoints)
                 .where(MetaUserPoints.id == account_uuid)
                 .values(
                     available_points=MetaUserPoints.available_points - consumed_points,
+                    total_points=MetaUserPoints.total_points - consumed_points,
                     used_points=MetaUserPoints.used_points + consumed_points,
                     last_consume_time=datetime.now()
                 )
@@ -431,6 +434,7 @@ async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: R
                 return False
                 
             # 2. 生成交易编号
+            import time  # 确保导入time模块
             transaction_no = f"TX{int(time.time())}{str(uuid.uuid4())[-12:]}"
             
             # 3. 创建积分交易记录
@@ -447,20 +451,66 @@ async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: R
                 request_id=request_id,
                 expire_time=datetime.now() + timedelta(days=365),  # 默认一年后过期
                 remark=f"API调用消费: {api_name}",
+                status=1,
                 client_ip=client_ip
             )
             db.add(transaction)
+        else:
+            # 如果不在事务中，使用begin()开始新事务
+            async with db.begin():
+                # 1. 更新用户积分账户
+                update_result = await db.execute(
+                    update(MetaUserPoints)
+                    .where(MetaUserPoints.id == account_uuid)
+                    .values(
+                        available_points=MetaUserPoints.available_points - consumed_points,
+                        used_points=MetaUserPoints.used_points + consumed_points,
+                        total_points=MetaUserPoints.total_points - consumed_points,
+                        last_consume_time=datetime.now()
+                    )
+                )
+                
+                if update_result.rowcount == 0:
+                    logger.error(f"更新积分账户失败: 找不到ID为 {account_id} 的账户")
+                    return False
+                    
+                # 2. 生成交易编号
+                import time  # 确保导入time模块
+                transaction_no = f"TX{int(time.time())}{str(uuid.uuid4())[-12:]}"
+                
+                # 3. 创建积分交易记录
+                transaction = RelPointsTransaction(
+                    transaction_no=transaction_no,
+                    user_id=user_uuid,
+                    account_id=account_uuid,
+                    points_change=-consumed_points,  # 负值表示消费
+                    remaining_points=available_points - consumed_points,
+                    transaction_type="CONSUME",
+                    transaction_status=1,  # 成功
+                    api_name=api_name,
+                    api_path=api_path,
+                    request_id=request_id,
+                    expire_time=datetime.now() + timedelta(days=365),  # 默认一年后过期
+                    remark=f"API调用消费: {api_name}",
+                    status=1,
+                    client_ip=client_ip
+                )
+                db.add(transaction)
         
-        logger.info(f"积分扣减成功: 用户 {user_id}, 消耗 {consumed_points} 积分, 剩余 {available_points - consumed_points} 积分")
+        logger.info_to_db(f"积分扣减成功: 用户 {user_id}, 消耗 {consumed_points} 积分, 剩余 {available_points - consumed_points} 可用积分")
         return True
         
     except SQLAlchemyError as e:
         logger.error(f"积分扣减数据库错误: {str(e)}", exc_info=True)
-        await db.rollback()
+        if not db.in_transaction():
+            # 只有在我们自己开启的事务中才回滚
+            await db.rollback()
         return False
     except Exception as e:
         logger.error(f"积分扣减未知错误: {str(e)}", exc_info=True)
-        await db.rollback()
+        if not db.in_transaction():
+            # 只有在我们自己开启的事务中才回滚
+            await db.rollback()
         return False
 
 

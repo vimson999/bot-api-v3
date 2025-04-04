@@ -193,6 +193,21 @@ class XHSService:
             raise XHSError(error_msg)
         
         try:
+            total_required = 10  # 基础消耗10分
+            
+            # 从上下文获取积分信息
+            points_info = request_ctx.get_points_info()
+            available_points = points_info.get('available_points', 0)
+            
+            # 验证积分是否足够
+            if available_points < total_required:
+                error_msg = f"获取基本信息时积分不足: 需要 {total_required} 积分您当前仅有 {available_points} 积分"
+                logger.info_to_db(error_msg, extra={"request_id": trace_key})
+                raise AudioTranscriptionError(error_msg)
+            
+            logger.info_to_db(f"获取基本信息时检查通过：所需 {total_required} 积分，可用 {available_points} 积分，需要记录这个消耗", 
+                    extra={"request_id": trace_key})
+
             # 使用asyncio.wait_for添加超时控制
             async def get_note_with_timeout():
                 # 由于XHS_Apis不是异步的，使用run_in_executor在线程池中执行
@@ -227,6 +242,9 @@ class XHSService:
             # 转换为统一的格式
             result = self._convert_note_to_standard_format(note_info)
             
+            # 基础信息获取成功，即使不提取文案，也需要消耗基础积分
+            request_ctx.set_consumed_points(total_required, "基础信息获取成功")
+
             # 提取视频文案（如果需要）
             if extract_text and result.get("type") == MediaType.VIDEO and result.get("media", {}).get("video_url"):
                 try:
@@ -418,7 +436,7 @@ class XHSService:
     
     @gate_keeper()
     @log_service_call(method_type="xhs", tollgate="10-3")
-    @cache_result(expire_seconds=3600)
+    @cache_result(expire_seconds=600)
     async def get_user_info(self, user_id: str) -> Dict[str, Any]:
         """
         获取小红书用户信息

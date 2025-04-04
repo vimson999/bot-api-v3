@@ -1,5 +1,3 @@
-# bot_api_v1/app/core/config.py
-
 from pydantic_settings import BaseSettings
 import os
 from typing import Optional, List, Dict, Any, Union
@@ -22,20 +20,50 @@ class Settings(BaseSettings):
     TIMEZONE: str = "Asia/Shanghai"
     DEFAULT_LOCALE: str = "zh_CN"
     
-    # 数据库配置
+    # 数据库配置调整
     DATABASE_URL: str = os.getenv(
         "DATABASE_URL", 
         "postgresql+asyncpg://cappa_rw:RWcappaDb!!!2025@101.35.56.140:5432/cappadocia_v1"
     )
+    # 减少默认连接池大小，避免创建过多连接
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))
+    # 减少默认最大溢出连接数
+    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+    # 减少连接回收时间，使连接更快被释放
+    DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "900"))  # 减少到15分钟
+    # 减少连接超时时间
+    DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "10"))  # 减少到10秒
+    # 添加空闲事务超时设置
+    DB_IDLE_TRANSACTION_TIMEOUT: int = int(os.getenv("DB_IDLE_TRANSACTION_TIMEOUT", "300"))  # 5分钟
+    # 启用会话追踪，便于调试连接问题
+    DB_TRACE_SESSIONS: bool = os.getenv("DB_TRACE_SESSIONS", "true").lower() == "true"
+    # 添加连接池使用率阈值配置
+    DB_POOL_USAGE_WARNING_THRESHOLD: float = float(os.getenv("DB_POOL_USAGE_WARNING_THRESHOLD", "0.7"))  # 当使用率超过70%时发出警告
+    # 添加连接获取重试配置
+    DB_CONNECTION_RETRY_ATTEMPTS: int = int(os.getenv("DB_CONNECTION_RETRY_ATTEMPTS", "3"))  # 连接获取重试次数
+    DB_CONNECTION_RETRY_DELAY: float = float(os.getenv("DB_CONNECTION_RETRY_DELAY", "0.5"))  # 重试延迟(秒)
+    # 添加连接统计间隔
+    DB_CONNECTION_STATS_INTERVAL: int = int(os.getenv("DB_CONNECTION_STATS_INTERVAL", "300"))  # 5分钟记录一次连接统计
+    # 添加预处理语句缓存大小
+    DB_PREPARED_STATEMENT_CACHE_SIZE: int = int(os.getenv("DB_PREPARED_STATEMENT_CACHE_SIZE", "100"))  # 预处理语句缓存大小
+    # 连接参数
+    DB_CONNECT_ARGS: Dict[str, Any] = {
+        "server_settings": {
+            "application_name": f"{os.getenv('PROJECT_NAME', 'API服务')}-{os.getenv('ENVIRONMENT', 'development')}",
+            "statement_timeout": os.getenv("DB_STATEMENT_TIMEOUT", "30000"),  # 30秒
+            "lock_timeout": os.getenv("DB_LOCK_TIMEOUT", "5000"),  # 5秒
+            "idle_in_transaction_session_timeout": os.getenv("DB_IDLE_TRANSACTION_TIMEOUT", "300000"),  # 5分钟
+            # 可选的预处理语句缓存大小
+            "prepared_statement_cache_size": os.getenv("DB_PREPARED_STATEMENT_CACHE_SIZE", "100"),
+        }
+    }
+    
     DB_ECHO: bool = os.getenv("DB_ECHO", "false").lower() == "true"
     DB_ECHO_POOL: bool = os.getenv("DB_ECHO_POOL", "false").lower() == "true"
-    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "20"))
-    DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "30"))
     DB_SCHEMA: str = os.getenv("DB_SCHEMA", "public") 
     DB_STATEMENT_TIMEOUT: int = int(os.getenv("DB_STATEMENT_TIMEOUT", "30000"))  # 30秒
     DB_LOCK_TIMEOUT: int = int(os.getenv("DB_LOCK_TIMEOUT", "5000"))  # 5秒
     DB_SLOW_QUERY_LOG: float = float(os.getenv("DB_SLOW_QUERY_LOG", "1.0"))  # 1秒以上查询记录
-    DB_TRACE_SESSIONS: bool = os.getenv("DB_TRACE_SESSIONS", "false").lower() == "true"
     DB_CONNECT_RETRIES: int = int(os.getenv("DB_CONNECT_RETRIES", "5"))
     DB_CONNECT_RETRY_INTERVAL: int = int(os.getenv("DB_CONNECT_RETRY_INTERVAL", "5"))
     
@@ -123,12 +151,14 @@ class Settings(BaseSettings):
                 "DEBUG": True,
             },
             "production": {
-                "DB_POOL_SIZE": 10,
-                "DB_MAX_OVERFLOW": 20,
+                # 减少生产环境连接池大小，避免超出PostgreSQL最大连接数
+                "DB_POOL_SIZE": 5,
+                "DB_MAX_OVERFLOW": 10,
                 "DEBUG": False,
             },
         }
         return all_envs.get(self.ENVIRONMENT, {}).get(key, getattr(self, key))
+
 
 @lru_cache()
 def get_settings() -> Settings:

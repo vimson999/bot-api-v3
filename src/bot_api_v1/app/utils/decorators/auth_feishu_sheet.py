@@ -105,7 +105,7 @@ def require_feishu_signature(exempt: bool = False):
                     )
                 
                 # 签名验证成功，记录token信息
-                logger.info(
+                logger.info_to_db(
                     f"飞书签名验证成功，并且流量识别成功，data is {token_data}",
                     extra={
                         "request_id": trace_key,

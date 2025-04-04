@@ -97,7 +97,7 @@ class ScriptService:
     
     @gate_keeper()
     @log_service_call(method_type="script", tollgate="10-2")
-    @cache_result(expire_seconds=3600)
+    @cache_result(expire_seconds=600)
     async def download_audio(self, url: str) -> Tuple[str, str]:
         """
         下载音频并返回文件路径和标题
@@ -173,7 +173,7 @@ class ScriptService:
     
     @gate_keeper()
     @log_service_call(method_type="script", tollgate="10-3")
-    @cache_result(expire_seconds=3600)
+    @cache_result(expire_seconds=300)
     async def transcribe_audio(self, audio_path: str) -> str:
         """
         将音频转写为文本
@@ -207,7 +207,7 @@ class ScriptService:
             audio = AudioSegment.from_file(audio_path)
             audio_duration = len(audio) / 1000  # 转换为秒
             
-            logger.info(f"音频时长: {audio_duration:.2f}秒", extra={"request_id": trace_key})
+            logger.info_to_db(f"音频时长: {audio_duration:.2f}秒", extra={"request_id": trace_key})
             
             # 计算所需积分：按时长计算，每60秒10分，不足60秒按10分计算
             required_points = 0  # 不额外计算基础消耗
@@ -224,11 +224,11 @@ class ScriptService:
             
             # 验证积分是否足够
             if available_points < total_required:
-                error_msg = f"积分不足: 处理该音频(时长 {duration_seconds} 秒)需要 {total_required} 积分（基础：{required_points}，时长：{duration_points}），您当前仅有 {available_points} 积分"
-                logger.warning(error_msg, extra={"request_id": trace_key})
+                error_msg = f"提取文案时积分不足: 处理该音频(时长 {duration_seconds} 秒)需要 {total_required} 积分（基础：{required_points}，时长：{duration_points}），您当前仅有 {available_points} 积分"
+                logger.info_to_db(error_msg, extra={"request_id": trace_key})
                 raise AudioTranscriptionError(error_msg)
             
-            logger.info(f"积分检查通过：所需 {total_required} 积分，可用 {available_points} 积分", 
+            logger.info_to_db(f"提取文案时积分检查通过：所需 {total_required} 积分，可用 {available_points} 积分", 
                     extra={"request_id": trace_key})
             
             # 加载模型
@@ -282,7 +282,7 @@ class ScriptService:
                 logger.info("所有音频片段转写完成", extra={"request_id": trace_key})
             
             elapsed_time = time.time() - start_time
-            logger.info(f"音频转写完成，耗时: {elapsed_time:.2f}秒", extra={"request_id": trace_key})
+            logger.info_to_db(f"音频转写完成，耗时: {elapsed_time:.2f}秒", extra={"request_id": trace_key})
             
             # 设置消耗的积分
             request_ctx.set_consumed_points(total_required, "音频转写服务")

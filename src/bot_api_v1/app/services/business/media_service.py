@@ -55,7 +55,7 @@ class MediaService:
     
     @gate_keeper()
     @log_service_call(method_type="media", tollgate="10-2")
-    @cache_result(expire_seconds=3600, prefix="media_extract")
+    @cache_result(expire_seconds=600, prefix="media_extract")
     async def extract_media_content(self, url: str, extract_text: bool = True, include_comments: bool = False) -> Dict[str, Any]:
         """
         提取媒体内容信息
@@ -77,6 +77,7 @@ class MediaService:
         platform = self.identify_platform(url)
         logger.info(f"识别URL平台: {url} -> {platform}", extra={"request_id": trace_key})
         
+
         try:
             if platform == MediaPlatform.DOUYIN:
                 return await self._process_douyin(url, extract_text, include_comments)
@@ -94,7 +95,7 @@ class MediaService:
     async def _process_douyin(self, url: str, extract_text: bool, include_comments: bool) -> Dict[str, Any]:
         """处理抖音内容"""
         trace_key = request_ctx.get_trace_key()
-        logger.info(f"处理抖音内容: {url}", extra={"request_id": trace_key})
+        logger.info_to_db(f"处理抖音内容: {url}", extra={"request_id": trace_key})
         
         # 调用抖音服务获取视频信息
         # video_info = await self.douyin_service.get_video_info(url, extract_text=extract_text)
@@ -152,7 +153,7 @@ class MediaService:
     async def _process_xiaohongshu(self, url: str, extract_text: bool, include_comments: bool) -> Dict[str, Any]:
         """处理小红书内容"""
         trace_key = request_ctx.get_trace_key()
-        logger.info(f"处理小红书内容: {url}", extra={"request_id": trace_key})
+        logger.info_to_db(f"处理小红书内容: {url}", extra={"request_id": trace_key})
         
         try:
             # 调用XHSService获取小红书笔记信息
