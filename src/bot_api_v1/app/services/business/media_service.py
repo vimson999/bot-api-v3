@@ -97,18 +97,16 @@ class MediaService:
         trace_key = request_ctx.get_trace_key()
         logger.info_to_db(f"处理抖音内容: {url}", extra={"request_id": trace_key})
         
-        # 调用抖音服务获取视频信息
-        # video_info = await self.douyin_service.get_video_info(url, extract_text=extract_text)
-        # video_info = await self.tiktok_service.get_video_info(url, extract_text=extract_text)
-        video_info = await self.tiktok_service.get_video_info(url)
-        
+        # 使用 async with 语句正确初始化 TikTokService
+        async with self.tiktok_service as service:
+            # 调用抖音服务获取视频信息
+            video_info = await service.get_video_info(url,extract_text=extract_text)        
 
-        # video_info = {}
-
+        duration = self._convert_time_to_seconds(video_info.get("duration", 0))
         # 转换为统一结构
         result = {
             "platform": MediaPlatform.DOUYIN,
-            "video_id": video_info.get("aweme_id", ""),
+            "video_id": video_info.get("id", ""),  # 使用 id 字段
             "original_url": url,
             "title": video_info.get("desc", ""),
             "description": video_info.get("desc", ""),
@@ -116,38 +114,38 @@ class MediaService:
             "tags": self._extract_tags_from_douyin(video_info),
             
             "author": {
-                "id": video_info.get("author", {}).get("uid", ""),
-                "sec_uid": video_info.get("author", {}).get("sec_uid", ""),
-                "nickname": video_info.get("author", {}).get("nickname", ""),
-                "avatar": video_info.get("author", {}).get("avatar", ""),
-                "signature": video_info.get("author", {}).get("signature", ""),
-                "verified": video_info.get("author", {}).get("is_verified", False),
-                "follower_count": video_info.get("author", {}).get("total_favorited", 0),
-                "following_count": video_info.get("author", {}).get("favoriting_count", 0),
-                "region": video_info.get("author", {}).get("region", "")
+                "id": video_info.get("uid", ""),  # 直接从顶层获取
+                "sec_uid": video_info.get("sec_uid", ""),  # 直接从顶层获取
+                "nickname": video_info.get("nickname", ""),  # 直接从顶层获取
+                "avatar": "",  # 视频信息中可能没有头像URL
+                "signature": video_info.get("signature", ""),  # 直接从顶层获取
+                "verified": False,  # 默认为False
+                "follower_count": 0,  # 视频信息中可能没有粉丝数
+                "following_count": 0,  # 视频信息中可能没有关注数
+                "region": ""  # 视频信息中可能没有地区信息
             },
             
             "statistics": {
-                "like_count": video_info.get("statistics", {}).get("digg_count", 0),
-                "comment_count": video_info.get("statistics", {}).get("comment_count", 0),
-                "share_count": video_info.get("statistics", {}).get("share_count", 0),
-                "collect_count": video_info.get("statistics", {}).get("collect_count", 0),
-                "play_count": video_info.get("statistics", {}).get("play_count", 0)
+                "like_count": video_info.get("digg_count", 0),  # 直接从顶层获取
+                "comment_count": video_info.get("comment_count", 0),  # 直接从顶层获取
+                "share_count": video_info.get("share_count", 0),  # 直接从顶层获取
+                "collect_count": video_info.get("collect_count", 0),  # 直接从顶层获取
+                "play_count": video_info.get("play_count", 0)  # 直接从顶层获取
             },
             
             "media": {
-                "cover_url": video_info.get("cover_url", ""),
-                "video_url": video_info.get("video_url", ""),
-                "duration": video_info.get("duration", 0),
-                "width": video_info.get("video", {}).get("width", 0),
-                "height": video_info.get("video", {}).get("height", 0),
+                "cover_url": video_info.get("origin_cover", ""),  # 使用原始封面
+                "video_url": video_info.get("downloads", ""),  # 使用下载链接
+                "duration": duration,
+                "width": video_info.get("width", 0),  # 直接从顶层获取
+                "height": video_info.get("height", 0),  # 直接从顶层获取
                 "quality": "normal"
             },
             
-            "publish_time": self._format_timestamp(video_info.get("create_time", 0)),
+            "publish_time": self._format_timestamp(video_info.get("create_timestamp", 0)),
             "update_time": None
         }
-        
+
         return result
     
     async def _process_xiaohongshu(self, url: str, extract_text: bool, include_comments: bool) -> Dict[str, Any]:
@@ -271,6 +269,39 @@ class MediaService:
         
         return list(set(tags))  # 去重
     
+    def _convert_time_to_seconds(self, time_str: Union[str, int, float]) -> int:
+            """
+            将时间字符串转换为秒数
+            
+            Args:
+                time_str: 时间字符串 (如 "00:01:31") 或数值
+                
+            Returns:
+                int: 秒数
+            """
+            if isinstance(time_str, (int, float)):
+                return int(time_str)
+                
+            if not isinstance(time_str, str):
+                return 0
+                
+            try:
+                # 处理 "00:01:31" 格式
+                if ":" in time_str:
+                    parts = time_str.split(":")
+                    if len(parts) == 3:  # 时:分:秒
+                        hours, minutes, seconds = map(int, parts)
+                        return hours * 3600 + minutes * 60 + seconds
+                    elif len(parts) == 2:  # 分:秒
+                        minutes, seconds = map(int, parts)
+                        return minutes * 60 + seconds
+                
+                # 尝试直接转换为整数
+                return int(float(time_str))
+            except (ValueError, TypeError):
+                logger.warning(f"无法解析时间字符串: {time_str}，使用默认值0")
+                return 0
+
     def _format_timestamp(self, timestamp: Union[int, float, None]) -> Optional[str]:
         """格式化时间戳为ISO格式字符串"""
         if not timestamp:

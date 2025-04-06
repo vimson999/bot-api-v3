@@ -359,3 +359,87 @@ class ScriptService:
                 logger.debug(f"已删除空目录: {parent_dir}", extra={"request_id": trace_key})
         except Exception as e:
             logger.warning(f"删除目录失败: {str(e)}", extra={"request_id": trace_key})
+
+
+
+    @gate_keeper()
+    @log_service_call(method_type="script", tollgate="10-2")
+    @cache_result(expire_seconds=600)
+    async def download_audio_direct(self, url: str) -> Tuple[str, str]:
+        """
+        直接从URL下载音频文件并返回文件路径和文件名
+        
+        适用于直接音频文件URL（如mp3、wav等），不需要通过yt-dlp提取
+        
+        Args:
+            url: 要下载的音频直链URL
+            
+        Returns:
+            Tuple[str, str]: (文件路径, 文件名)
+            
+        Raises:
+            AudioDownloadError: 下载失败时抛出
+        """
+        # 获取trace_key
+        trace_key = request_ctx.get_trace_key()
+        
+        logger.info(f"download_audio_direct-开始直接下载音频: {url}", extra={"request_id": trace_key})
+        
+        # 创建唯一的临时目录
+        download_dir = os.path.join(self.temp_dir, f"audio_direct_{int(time.time())}")
+        os.makedirs(download_dir, exist_ok=True)
+        
+        # 从URL中提取文件名
+        file_name = url.split('/')[-1]
+        if not file_name or '.' not in file_name:
+            # 如果无法从URL获取有效文件名，使用时间戳生成
+            file_name = f"audio_{int(time.time())}.mp3"
+        
+        downloaded_path = os.path.join(download_dir, file_name)
+        
+        try:
+            import requests
+            
+            # 设置请求头，模拟浏览器行为
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36',
+            }
+            
+            # 使用流式下载以处理大文件
+            with requests.get(url, headers=headers, stream=True, timeout=30) as response:
+                response.raise_for_status()  # 确保请求成功
+                
+                # 获取内容类型，验证是否为音频文件
+                content_type = response.headers.get('Content-Type', '')
+                if not content_type.startswith(('audio/', 'video/', 'application/octet-stream')):
+                    logger.warning(f"下载的内容可能不是音频文件，Content-Type: {content_type}", 
+                                  extra={"request_id": trace_key})
+                
+                # 写入文件
+                with open(downloaded_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+            
+            # 验证文件是否存在且不为空
+            if not os.path.exists(downloaded_path):
+                raise AudioDownloadError(f"音频文件未找到: {downloaded_path}")
+                
+            if os.path.getsize(downloaded_path) == 0:
+                os.remove(downloaded_path)
+                raise AudioDownloadError(f"下载的音频文件为空: {downloaded_path}")
+            
+            logger.info(f"音频直接下载完成: {file_name}", extra={"request_id": trace_key})
+            return downloaded_path, file_name
+            
+        except requests.RequestException as e:
+            error_msg = f"下载音频失败: {str(e)}"
+            logger.error(error_msg, extra={"request_id": trace_key})
+            self._cleanup_dir(download_dir, trace_key)
+            raise AudioDownloadError(error_msg) from e
+            
+        except Exception as e:
+            error_msg = f"下载音频时出现异常: {str(e)}"
+            logger.error(error_msg, exc_info=True, extra={"request_id": trace_key})
+            self._cleanup_dir(download_dir, trace_key)
+            raise AudioDownloadError(error_msg) from e

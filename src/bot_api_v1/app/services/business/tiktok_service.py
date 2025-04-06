@@ -13,9 +13,22 @@ from pathlib import Path
 
 from bot_api_v1.app.core.cache import cache_result
 from bot_api_v1.app.core.logger import logger
-from bot_api_v1.app.utils.decorators.log_service_call import log_service_call
+from bot_api_v1.app.utils.decorators.log_service_call import F, log_service_call
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
+from bot_api_v1.app.services.business.script_service import ScriptService
+import tempfile  # 添加缺失的导入
+
+# 定义常量
+class NoteType:
+    VIDEO = "视频"
+    IMAGE = "图文"
+    UNKNOWN = "unknown"
+
+class MediaType:
+    VIDEO = "Video"
+    IMAGE = "image"
+    UNKNOWN = "unknown"
 
 
 class TikTokError(Exception):
@@ -38,6 +51,15 @@ class UserFetchError(TikTokError):
     pass
 
 
+
+# 添加缺失的异常类定义
+class AudioTranscriptionError(TikTokError):
+    """Raised when audio transcription fails"""
+    pass
+
+class AudioDownloadError(TikTokError):
+    """Raised when audio download fails"""
+    pass
 
 class TikTokService:
     """
@@ -95,6 +117,8 @@ class TikTokService:
         self.settings = None
         self.cookie_object = None
         self.parameters = None
+
+        self.script_service = ScriptService()
         
         # Import required modules only when actually needed
         self._setup_imports()
@@ -253,10 +277,14 @@ class TikTokService:
         except Exception as e:
             logger.warning(f"Error during cleanup: {str(e)}")
     
+    @gate_keeper()
+    @log_service_call(method_type="douyin", tollgate="10-2")
+    @cache_result(expire_seconds=600)
     async def get_video_info(
         self, 
         url: str, 
-        retries: Optional[int] = None
+        retries: Optional[int] = None,
+        extract_text: bool = False
     ) -> Dict[str, Any]:
         """
         Get detailed information about a TikTok/Douyin video.
@@ -279,8 +307,24 @@ class TikTokService:
         # Use class default if retries not specified
         retries = self.max_retries if retries is None else retries
         
+        trace_key = request_ctx.get_trace_key()
         logger.info(f"Fetching video info for URL: {url}")
         
+        total_required = 10  # 基础消耗10分
+            
+        # 从上下文获取积分信息
+        points_info = request_ctx.get_points_info()
+        available_points = points_info.get('available_points', 0)
+        
+        # 验证积分是否足够
+        if available_points < total_required:
+            error_msg = f"获取基本信息时积分不足: 需要 {total_required} 积分您当前仅有 {available_points} 积分"
+            logger.info_to_db(error_msg, extra={"request_id": trace_key})
+            raise AudioTranscriptionError(error_msg)
+        
+        logger.info_to_db(f"获取基本信息时检查通过：所需 {total_required} 积分，可用 {available_points} 积分，需要记录这个消耗", 
+                extra={"request_id": trace_key})
+
         # Implement retry logic
         for attempt in range(retries + 1):
             try:
@@ -323,7 +367,39 @@ class TikTokService:
                 result = processed_data[0]
                 logger.info(f"Successfully fetched info for video: {result.get('desc', 'Untitled')}")
                 
+                # 提取视频文案（如果需要）
+                if extract_text and result.get("type") == MediaType.VIDEO and result.get("music_url"):
+                    try:
+                        video_url = result.get("music_url", "")
+                        if not video_url:
+                            logger.warning(f"无法获取抖音视频URL，跳过文案提取", extra={"request_id": trace_key})
+                            result["transcribed_text"] = "无法获取视频URL"
+                        else:
+                            logger.info(f"开始提取抖音视频文案: {result.get('note_id', '')}", extra={"request_id": trace_key})
+                            
+                            # 下载视频
+                            try:
+                                audio_path = await self._download_douyin_video(video_url, trace_key)                                
+                                
+                                # 转写音频
+                                transcribed_text = await self.script_service.transcribe_audio(audio_path)
+                                
+                                # 添加到结果中
+                                result["transcribed_text"] = transcribed_text
+                                logger.info(f"成功提取抖音视频文案", extra={"request_id": trace_key})
+                            except AudioDownloadError as e:
+                                logger.error(f"下载抖音视频失败: {str(e)}", extra={"request_id": trace_key})
+                                result["transcribed_text"] = f"下载视频失败: {str(e)}"
+                            except AudioTranscriptionError as e:
+                                logger.error(f"转写抖音视频失败: {str(e)}", extra={"request_id": trace_key})
+                                result["transcribed_text"] = f"转写视频失败: {str(e)}"
+                    except Exception as e:
+                        logger.error(f"提取抖音视频文案失败: {str(e)}", exc_info=True, extra={"request_id": trace_key})
+                        result["transcribed_text"] = f"提取文案失败: {str(e)}"
+                
+                logger.info(f"成功获取抖音笔记信息: {result.get('note_id', '')}", extra={"request_id": trace_key})
                 return result
+
                 
             except VideoFetchError:
                 # Re-raise specific errors without retrying
@@ -343,6 +419,73 @@ class TikTokService:
                         f"Failed to get video info after {retries+1} attempts: {str(e)}"
                     ) from e
     
+
+    async def _download_douyin_video(self, video_url: str, trace_key: str) -> str:
+        logger.info(f"开始下载抖音视频: {video_url}", extra={"request_id": trace_key})
+        
+        # 创建唯一的临时目录
+        download_dir = os.path.join(tempfile.gettempdir(), f"douyin_video_{int(time.time())}")
+        os.makedirs(download_dir, exist_ok=True)
+        
+        try:
+            # 根据URL判断是音频还是视频
+            is_audio = '.mp3' in video_url or 'music' in video_url
+            
+            # 生成输出文件路径
+            extension = '.mp3' if is_audio else '.mp4'
+            output_path = os.path.join(download_dir, f"media_{int(time.time())}{extension}")
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept": "*/*",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Referer": "https://www.douyin.com/",
+            }
+            
+            async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=30.0) as client:
+                async with client.stream('GET', video_url) as response:
+                    response.raise_for_status()
+                    
+                    # 检查响应头中的内容类型
+                    content_type = response.headers.get('content-type', '')
+                    if not (content_type.startswith('video/') or content_type.startswith('audio/') or 'application/octet-stream' in content_type):
+                        raise AudioDownloadError(f"不支持的内容类型: {content_type}")
+                    
+                    # 以二进制方式写入文件
+                    async with aiofiles.open(output_path, 'wb') as f:
+                        async for chunk in response.aiter_bytes():
+                            await f.write(chunk)
+            
+            # 验证文件是否存在且不为空
+            if not os.path.exists(output_path):
+                raise AudioDownloadError(f"媒体文件未找到: {output_path}")
+                
+            if os.path.getsize(output_path) == 0:
+                os.remove(output_path)
+                raise AudioDownloadError(f"下载的媒体文件为空: {output_path}")
+            
+            logger.info(f"抖音媒体下载完成: {output_path}", extra={"request_id": trace_key})
+            return output_path
+            
+        except httpx.HTTPError as e:
+            error_msg = f"下载媒体时发生HTTP错误: {str(e)}"
+            logger.error(error_msg, exc_info=True, extra={"request_id": trace_key})
+            raise AudioDownloadError(error_msg) from e
+            
+        except Exception as e:
+            error_msg = f"下载抖音媒体时出现异常: {str(e)}"
+            logger.error(error_msg, exc_info=True, extra={"request_id": trace_key})
+            
+            # 清理临时目录
+            try:
+                for item in os.listdir(download_dir):
+                    os.remove(os.path.join(download_dir, item))
+                os.rmdir(download_dir)
+            except:
+                pass
+                
+            raise AudioDownloadError(error_msg) from e
+
     async def get_user_info(
         self, 
         sec_user_id: str, 

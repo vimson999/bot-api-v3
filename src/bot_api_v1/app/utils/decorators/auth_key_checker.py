@@ -9,6 +9,7 @@ from sqlalchemy import select, update, and_, func, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
+from bot_api_v1.app.models import relations
 from bot_api_v1.app.models.meta_auth_key import MetaAuthKey
 from bot_api_v1.app.models.meta_user_points import MetaUserPoints
 from bot_api_v1.app.models.rel_points_transaction import RelPointsTransaction
@@ -451,6 +452,7 @@ async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: R
                 request_id=request_id,
                 expire_time=datetime.now() + timedelta(days=365),  # 默认一年后过期
                 remark=f"API调用消费: {api_name}",
+                related_api_key_id=key_obj.id,
                 status=1,
                 client_ip=client_ip
             )
@@ -492,6 +494,7 @@ async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: R
                     request_id=request_id,
                     expire_time=datetime.now() + timedelta(days=365),  # 默认一年后过期
                     remark=f"API调用消费: {api_name}",
+                    related_api_key_id=key_obj.id,
                     status=1,
                     client_ip=client_ip
                 )
