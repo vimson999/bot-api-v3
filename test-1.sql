@@ -455,6 +455,22 @@ curl -X GET "http://101.35.56.140:8000/api/health" \
 
 
 
+curl -X GET "http://121.4.126.31/api/health" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user"
+
+
+
+curl -X GET "http://www.xiaoshanqing.tech/api/health" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user"
+
+
+
 curl -X GET "http://101.35.56.140/api/health" \
   -H "Content-Type: application/json" \
   -H "x-source: test" \
