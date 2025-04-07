@@ -103,7 +103,7 @@ function buyProduct(productId) {
         
         if (data.code === 0) {
             // 订单创建成功，跳转到支付页面
-            window.location.href = `/wechat_mp/pay?order_id=${data.data.order_id}&token=${token}`;
+            window.location.href = `/api/wechat_mp/pay?order_id=${data.data.order_id}&token=${token}`;
         } else {
             // 显示错误信息
             alert(data.message || '创建订单失败，请重试');

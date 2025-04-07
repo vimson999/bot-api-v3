@@ -4,6 +4,7 @@
 提供微信小程序登录、用户信息解密等功能。
 """
 # 在文件开头整理导入语句
+from itertools import product
 import json
 import time
 import uuid
@@ -813,8 +814,8 @@ class WechatService:
             except Exception as e:
                 logger.error(f"发送欢迎模板消息失败: {str(e)}", exc_info=True)
             
-            logger.info(
-                f"用户关注公众号处理成功: {openid}",
+            logger.info_to_db(
+                f"创建新用户，用户关注公众号处理成功: {openid}",
                 extra={
                     "request_id": trace_key,
                     "openid": openid,
@@ -1365,12 +1366,13 @@ class WechatService:
 
     @gate_keeper()
     @log_service_call()
-    async def generate_h5_token(self, openid: str) -> str:
+    async def generate_h5_token(self, user_id :str ,openid: str) -> str:
         """
         生成H5网页授权token
         """
         payload = {
-            "sub": str(uuid.uuid4()),  # 随机用户ID
+            # "sub": str(uuid.uuid4()),  # 随机用户ID
+            "sub": user_id,
             "openid": openid,
             "exp": datetime.utcnow() + timedelta(hours=2)  # 2小时有效期
         }
@@ -1477,6 +1479,8 @@ class WechatService:
         self, 
         order_id: str, 
         openid: str, 
+        product_name: str,
+        total_fee: float,
         db: AsyncSession
     ) -> Dict[str, Any]:
         """
@@ -1485,6 +1489,8 @@ class WechatService:
         Args:
             order_id: 订单ID
             openid: 用户OpenID
+            product_name: 商品名称
+            total_fee: 支付金额（元）
             db: 数据库会话
             
         Returns:
@@ -1503,34 +1509,98 @@ class WechatService:
             if order_info.order_status != 0:
                 raise WechatError("订单状态不正确，无法支付")
             
+            # 获取访问令牌
+            access_token = await self._get_mp_access_token()
+            
             # 构建微信支付统一下单参数
-            # 实际项目中需要调用微信支付API
-            # 这里仅作示例
             nonce_str = secrets.token_hex(16)
             timestamp = str(int(time.time()))
             
-            # 模拟调用微信支付API
-            # 实际项目中需要实现真实的微信支付接口调用
-            prepay_id = f"wx{timestamp}{secrets.randbelow(10000000):07d}"
+            # 将元转换为分（微信支付金额单位是分）
+            fee_in_cents = int(total_fee * 100)
             
-            # 构建JSAPI支付参数
-            pay_params = {
-                "appId": self.mp_id,
-                "timeStamp": timestamp,
-                "nonceStr": nonce_str,
-                "package": f"prepay_id={prepay_id}",
-                "signType": "MD5"
+            # 构建统一下单请求参数
+            unifiedorder_data = {
+                "appid": self.mp_id,
+                # "mch_id": settings.WECHAT_MERCHANT_ID,  # 商户号
+                "nonce_str": nonce_str,
+                "body": f"{product_name}",  # 商品描述
+                "out_trade_no": order_info.order_no,  # 商户订单号
+                "total_fee": fee_in_cents,  # 订单金额（分）
+                "spbill_create_ip": request_ctx.get_context().get("ip_address", "127.0.0.1"),  # 终端IP
+                "notify_url": f"{settings.DOMAIN_API_URL}/api/wechat_mp/payment/notify",  # 支付结果通知地址
+                "trade_type": "JSAPI",  # 交易类型
+                "openid": openid  # 用户标识
             }
             
-            sign_str = "&".join([f"{k}={pay_params[k]}" for k in sorted(pay_params.keys())])
-            sign_str += f"&key={settings.WECHAT_MERCHANT_KEY}"  # 使用配置中的商户密钥
-            pay_params["paySign"] = hashlib.md5(sign_str.encode()).hexdigest().upper()         
+            # 生成签名
+            sign_str = "&".join([f"{k}={unifiedorder_data[k]}" for k in sorted(unifiedorder_data.keys())])
+            sign_str += f"&key={settings.WECHAT_MERCHANT_KEY}"  # 商户密钥
+            unifiedorder_data["sign"] = hashlib.md5(sign_str.encode()).hexdigest().upper()
             
-            # 更新订单状态为支付处理中
-            await self.order_service.update_order_status(order_id, 1, db=db)
+            # 将字典转为XML
+            xml_data = "<xml>"
+            for k, v in unifiedorder_data.items():
+                xml_data += f"<{k}>{v}</{k}>"
+            xml_data += "</xml>"
             
-            return pay_params
+            # 调用微信支付统一下单接口
+            url = "https://api.mch.weixin.qq.com/pay/unifiedorder"
             
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.post(url, content=xml_data, headers={"Content-Type": "application/xml"})
+                response.raise_for_status()
+                
+                # 解析XML响应
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(response.text)
+                result = {child.tag: child.text for child in root}
+                
+                # 检查返回结果
+                if result.get("return_code") != "SUCCESS" or result.get("result_code") != "SUCCESS":
+                    error_msg = result.get("return_msg") or result.get("err_code_des", "未知错误")
+                    logger.error(f"微信支付统一下单失败: {error_msg}", 
+                                extra={"request_id": trace_key, "order_id": order_id})
+                    raise WechatError(f"微信支付下单失败: {error_msg}")
+                
+                # 获取预支付交易会话标识
+                prepay_id = result.get("prepay_id")
+                if not prepay_id:
+                    raise WechatError("获取prepay_id失败")
+                
+                # 构建JSAPI支付参数
+                pay_params = {
+                    "appId": self.mp_id,
+                    "timeStamp": timestamp,
+                    "nonceStr": nonce_str,
+                    "package": f"prepay_id={prepay_id}",
+                    "signType": "MD5"
+                }
+                
+                # 生成支付签名
+                pay_sign_str = "&".join([f"{k}={pay_params[k]}" for k in sorted(pay_params.keys())])
+                pay_sign_str += f"&key={settings.WECHAT_MERCHANT_KEY}"
+                pay_params["paySign"] = hashlib.md5(pay_sign_str.encode()).hexdigest().upper()
+                
+                # 更新订单状态为支付处理中
+                await self.order_service.update_order_status(order_id, 1, db=db)
+                
+                # 记录支付信息到日志
+                logger.info_to_db(
+                    f"成功创建JSAPI支付参数: order_id={order_id}, prepay_id={prepay_id}",
+                    extra={"request_id": trace_key, "order_id": order_id, "openid": openid}
+                )
+                
+                # 添加额外信息方便前端使用
+                pay_params["order_id"] = order_id
+                pay_params["total_fee"] = total_fee
+                pay_params["product_name"] = product_name
+                
+                return pay_params
+            
+        except WechatError:
+            # 重新抛出已有错误
+            raise
         except Exception as e:
             logger.error(f"创建JSAPI支付参数失败: {str(e)}", 
                         exc_info=True, 

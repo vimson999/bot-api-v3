@@ -73,6 +73,12 @@ class MetaOrder(Base):
         nullable=True,
         comment="用户名称（冗余）"
     )
+
+    product_name: Mapped[Optional[str]] = mapped_column(
+        VARCHAR(100),
+        nullable=True,
+        comment="商品名称（冗余）"
+    )
     
     # 商品和套餐信息
     product_id: Mapped[Optional[uuid.UUID]] = mapped_column(

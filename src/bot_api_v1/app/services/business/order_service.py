@@ -41,6 +41,7 @@ class OrderService:
         product_id: str, 
         product_name: str,
         amount: float, 
+        total_points: int,
         db: AsyncSession
     ) -> Dict[str, Any]:
         """
@@ -66,35 +67,40 @@ class OrderService:
             order_no = f"WX{int(time.time())}{secrets.randbelow(10000):04d}"
             
             # 创建订单记录
-            new_order = {}
-            # new_order = MetaOrder(
-            #     order_no=order_no,  # 订单编号，由时间戳和随机数生成
-            #     order_type="PACKAGE",  # 或根据商品类型设置
-            #     user_id=uuid.UUID(user_id),
-            #     product_id=uuid.UUID(product_id),
-            #     original_amount=amount,
-            #     discount_amount=0,  # 可根据促销活动设置
-            #     total_amount=amount,
-            #     total_points=0,  # 根据商品设置
-            #     currency="CNY",
-            #     order_status=0,  # 待支付
-            #     payment_channel="WECHAT",
-            #     user_name=None,  # 可从用户信息获取
-            #     product_snapshot={
-            #         "name": product_name,
-            #         "price": amount,
-            #         "id": product_id
-            #     },
-            #     client_ip=request_ctx.get_context().get("ip_address") or "127.0.0.1",  # 添加默认值并修复逗号
-            #     remark=f"微信公众号购买 {product_name}"
-            # )
+            # new_order = {}
+            new_order = MetaOrder(
+                order_no=order_no,  # 订单编号，由时间戳和随机数生成
+                order_type="POINT",  # 或根据商品类型设置
+                user_id=uuid.UUID(user_id),
+                product_id=uuid.UUID(product_id),
+                original_amount=amount,
+                discount_amount=0,  # 可根据促销活动设置
+                total_amount=amount,
+                total_points=total_points,  # 根据商品设置
+                currency="CNY",
+                order_status=0,  # 待支付
+                payment_channel="WECHAT",
+                product_name=product_name,
+                user_name=None,  # 可从用户信息获取
+                # product_snapshot={
+                #     "name": product_name,
+                #     "price": amount,
+                #     "id": product_id
+                # },
+                client_ip=request_ctx.get_context().get("ip_address") or "127.0.0.1",  # 添加默认值并修复逗号
+                remark=f"微信公众号购买 {product_name}"
+            )
             
-            # db.add(new_order)
+            db.add(new_order)
+
             await db.commit()
             await db.refresh(new_order)
             
+            logger.info_to_db(f"创建订单成功: order_id={new_order.id}, order_no={order_no},user_id={user_id},product_id={product_id},amount={amount}", 
+                        extra={"request_id": trace_key})
+
             return {
-                # "order_id": str(new_order.id),
+                "order_id": str(new_order.id),
                 "order_no": order_no,
                 "amount": amount,
                 "product_name": product_name
@@ -105,7 +111,7 @@ class OrderService:
             logger.error(f"创建订单失败: {str(e)}", 
                         exc_info=True, 
                         extra={"request_id": trace_key})
-            raise OrderError(f"创建订单失败: {str(e)}")
+            raise OrderError(f"创建订单失败:详见日志")
     
     @gate_keeper()
     @log_service_call(method_type="order", tollgate="30-2")

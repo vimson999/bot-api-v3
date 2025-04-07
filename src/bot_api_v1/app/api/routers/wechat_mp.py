@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional
 import json
 
 
+from bot_api_v1.app.services.business.user_service import UserService
 from bot_api_v1.app.services.business.order_service import OrderService, OrderError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -48,7 +49,7 @@ class WechatMpEvent(BaseModel):
 
 # 实例化微信服务
 wechat_service = WechatService()
-
+user_service = UserService()
 @router.post(
     "/callback",
     response_model=BaseResponse,
@@ -210,14 +211,25 @@ async def handle_product_list(
         # 1. 通过code获取access_token和openid
         user_info = await wechat_service.get_mp_user_info_from_code_h5(code)
         openid = user_info.get('openid')
-        
+
+        # 2. 生成令牌
         if not openid:
             logger.error("获取用户openid失败")
             # 重定向到错误页面
             return RedirectResponse(url=f"/static/error.html?code=401&message={urllib.parse.quote('授权失败')}")
         
+
+        trace_key = request_ctx.get_trace_key()
+        #3 根据openid获取用户信息
+        user_id = await user_service.get_user_id_by_openid(db, openid,"wx",trace_key)
+        if not user_id:
+            logger.error("获取用户信息失败")
+            # 重定向到错误页面
+            return RedirectResponse(url=f"/static/error.html?code=401&message={urllib.parse.quote('授权失败')}")
+        user_id_str = str(user_id)
+
         # 2. 生成JWT令牌，包含用户身份信息
-        token = await wechat_service.generate_h5_token(openid)
+        token = await wechat_service.generate_h5_token(user_id_str,openid)
         
         # 3. 重定向到静态HTML页面
         return RedirectResponse(url=f"/static/product_list.html?token={token}&openid={openid}")
@@ -310,6 +322,7 @@ async def create_order(
             product_id=request.product_id,
             product_name=product.name,
             amount=product.sale_price,
+            total_points=product.point_amount,
             db=db
         )
         
@@ -364,6 +377,8 @@ async def payment_page(
         pay_params = await wechat_service.create_jsapi_payment(
             order_id=order_id,
             openid=user_info["openid"],
+            product_name=order_info.product_name,  # 直接访问属性而不是使用get方法
+            total_fee=float(order_info.total_amount),  # 添加订单金额参数
             db=db
         )
         
@@ -429,6 +444,7 @@ async def get_order_detail(
             "order_no": order_info.order_no,
             "amount": float(order_info.total_amount),
             "status": order_info.order_status,
+            "product_name": str(order_info.product_name),
             # "product_name": order_info.product_snapshot.get("name", "未知商品") if order_info.product_snapshot else "未知商品",
             "created_at": order_info.created_at.isoformat() if order_info.created_at else None
         }
