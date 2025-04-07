@@ -358,6 +358,9 @@ git push https://vim999:e41eeb6d5f1fb9dc20c72c374eaff93a@gitee.com/vim999/bot_ap
 debug_pack_id_1742102777762
 
 git push https://vim999:b82e6340f29e62b2c18df8a583ffe593@gitee.com/vim999/bot_api_v1.git master
+git push https://vim999:b82e6340f29e62b2c18df8a583ffe593@gitee.com/vim999/bot_api_v1.git master
+
+git push https://vim999:eae3e4ac72912acc5aa0bb24a3453d92@gitee.com/vim999/bot_api_v1.git master
 
 
 
