@@ -45,10 +45,15 @@ sys.path.append(str(SPIDER_XHS_PATH))
 
 # 导入小红书子模块
 try:
-    from apis.pc_apis import XHS_Apis
-    from xhs_utils.data_util import handle_note_info, download_note
-    from xhs_utils.common_utils import init as xhs_init, load_env
+    # from apis.pc_apis import XHS_Apis
+    # from xhs_utils.data_util import handle_note_info, download_note
+    # from xhs_utils.common_utils import init as xhs_init, load_env
     
+    from bot_api_v1.libs.spider_xhs.apis.pc_apis import XHS_Apis
+    from bot_api_v1.libs.spider_xhs.xhs_utils.data_util import handle_note_info, download_note
+    from bot_api_v1.libs.spider_xhs.xhs_utils.common_utils import init as xhs_init, load_env
+
+
     SPIDER_XHS_LOADED = True
 except ImportError as e:
     logger.error(f"无法导入小红书子模块: {str(e)}")

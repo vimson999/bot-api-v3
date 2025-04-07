@@ -367,6 +367,10 @@ pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 pip install --upgrade pip
 pip install -r requirements.txt
 
+nohup pip install -r requirements.txt > install.log 2>&1 &
+tail -f install.log
+
+
 # 在项目根目录创建.env文件
 echo "DATABASE_URL=postgresql+asyncpg://cappa_rw:RWcappaDb!!!2025@10.0.16.12:5432/cappadocia_v1" > .env
 echo 'DATABASE_URL=postgresql+asyncpg://cappa_rw:RWcappaDb!!!2025@10.0.16.12:5432/cappa_p_v1' > .env

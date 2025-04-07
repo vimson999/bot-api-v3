@@ -136,9 +136,15 @@ class TikTokService:
             tiktok_root = Path(self.tiktok_lib_path)
             
             # Add TikTok downloader path to system path if not already there
-            if str(tiktok_root) not in sys.path:
-                sys.path.append(str(tiktok_root))
-                logger.debug(f"Added {tiktok_root} to Python path")
+            # if str(tiktok_root) not in sys.path:
+            #     sys.path.append(str(tiktok_root))
+            #     logger.debug(f"Added {tiktok_root} to Python path")
+
+            tiktok_src_path = tiktok_root / "src"
+            # Add TikTok downloader src path to system path if not already there
+            if str(tiktok_src_path) not in sys.path:
+                sys.path.append(str(tiktok_src_path))
+                logger.debug(f"Added {tiktok_src_path} to Python path")
             
             # Store original directory to restore later
             self._original_dir = os.getcwd()
