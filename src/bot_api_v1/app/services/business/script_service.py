@@ -7,10 +7,9 @@ import os
 import time
 import tempfile
 from typing import Tuple, Optional, Dict, Any
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from concurrent.futures import ThreadPoolExecutor, as_completed  # 在顶部导入as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 import torch
 import whisper
 import yt_dlp
@@ -324,7 +323,7 @@ class ScriptService:
                         chunk_text = result.get("text", "").strip()
                         logger.debug(f"片段 {chunk_idx+1}/{num_chunks} 转写完成", extra={"request_id": trace_key})
                         return chunk_text
-                    except concurrent.futures.TimeoutError:
+                    except FuturesTimeoutError:
                         logger.error(f"片段 {chunk_idx+1}/{num_chunks} 转写超时", extra={"request_id": trace_key})
                         return ""
                     except Exception as e:
