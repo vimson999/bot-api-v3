@@ -10,6 +10,7 @@ from typing import Tuple, Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from concurrent.futures import ThreadPoolExecutor, as_completed  # 在顶部导入as_completed
 import torch
 import whisper
 import yt_dlp
@@ -263,8 +264,6 @@ class ScriptService:
             
             if audio_duration <= 300:  # 5分钟以内直接转写
                 logger.info("音频时长小于5分钟，直接转写", extra={"request_id": trace_key})
-                # 添加超时控制
-                import concurrent.futures
                 future = ScriptService._thread_pool.submit(
                     lambda: model.transcribe(audio_path)
                 )
@@ -272,13 +271,13 @@ class ScriptService:
                     # 设置超时时间，避免单个任务阻塞太久
                     result = future.result(timeout=max(300, audio_duration * 2))
                     text = result.get("text", "").strip()
-                except concurrent.futures.TimeoutError:
+                except TimeoutError:
                     raise AudioTranscriptionError(f"音频转写超时，请尝试较短的音频")
                 
             else:
                 # 音频分割和并行转写
                 # 动态调整分片大小，避免过多小片段
-                optimal_chunk_duration = min(max(60, int(audio_duration / 40)), 180)
+                optimal_chunk_duration = min(max(100, int(audio_duration / 40)), 180)
                 chunk_duration = optimal_chunk_duration if optimal_chunk_duration != self.chunk_duration else self.chunk_duration
                 
                 num_chunks = int(audio_duration // chunk_duration) + (
@@ -342,7 +341,7 @@ class ScriptService:
                     results = []
                     
                     # 使用as_completed获取先完成的结果，提高整体响应速度
-                    for future in concurrent.futures.as_completed(futures):
+                    for future in as_completed(futures):
                         results.append(future.result())
                     
                 # 合并结果，保持段落顺序（需要重新排序，因为as_completed返回的顺序不确定）
