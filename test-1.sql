@@ -357,10 +357,6 @@ git push https://vim999:e41eeb6d5f1fb9dc20c72c374eaff93a@gitee.com/vim999/bot_ap
 
 debug_pack_id_1742102777762
 
-git push https://vim999:b82e6340f29e62b2c18df8a583ffe593@gitee.com/vim999/bot_api_v1.git master
-git push https://vim999:b82e6340f29e62b2c18df8a583ffe593@gitee.com/vim999/bot_api_v1.git master
-
-git push https://vim999:eae3e4ac72912acc5aa0bb24a3453d92@gitee.com/vim999/bot_api_v1.git master
 
 
 
@@ -456,24 +452,6 @@ curl -X GET "http://101.35.56.140:8000/api/health" \
   -H "x-source: test" \
   -H "x-app-id: test-app" \
   -H "x-user-uuid: test-user"
-
-
-
-curl -X GET "http://121.4.126.31/api/health" \
-  -H "Content-Type: application/json" \
-  -H "x-source: test" \
-  -H "x-app-id: test-app" \
-  -H "x-user-uuid: test-user"
-
-
-
-curl -X GET "http://www.xiaoshanqing.tech/api/health" \
-  -H "Content-Type: application/json" \
-  -H "x-source: test" \
-  -H "x-app-id: test-app" \
-  -H "x-user-uuid: test-user"
-
-
 
 
 
@@ -619,12 +597,40 @@ curl -X POST "http://localhost:8000/api/douyin/user/info" \
 
 
 
-curl -X POST "http://localhost:8000/api/media/extract" \
+curl -X POST "http://www.xiaoshanqing.tech/api/media/extract" \
   -H "Content-Type: application/json" \
   -H "x-source: test-client" \
   -H "x-app-id: test-app" \
   -H "x-user-uuid: test-user" \
   -d '{"url": "https://www.douyin.com/video/7475254041207950642", "extract_text": true}'
+
+
+
+curl -X POST "http://121.4.126.31/api/media/extract" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test-client" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user" \
+  -d '{"url": "https://www.douyin.com/video/7475254041207950642", "extract_text": true}'
+
+
+curl -X POST "https://121.4.126.31/api/media/extract" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test-client" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user" \
+  -d '{"url": "https://www.douyin.com/video/7475254041207950642", "extract_text": true}'
+
+
+
+
+curl -X POST "https://www.xiaoshanqing.tech/api/media/extract" \
+  -H "Content-Type: application/json" \
+  -H "x-source: test-client" \
+  -H "x-app-id: test-app" \
+  -H "x-user-uuid: test-user" \
+  -d '{"url": "https://www.douyin.com/video/7475254041207950642", "extract_text": true}'
+
 
 
 
@@ -663,7 +669,6 @@ cd src/bot_api_v1/libs/spider_xhs
 npm install
 
 
-
 git submodule add https://github.com/vimson999/TikTokDownloader.git src/bot_api_v1/libs/tiktok_downloader
 git submodule update --init --recursive
 
@@ -672,6 +677,9 @@ pip install -r requirements.txt
 
 pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
+
+pip install -r src/bot_api_v1/libs/spider_xhs/requirements.txt
+pip install -r src/bot_api_v1/libs/tiktok_downloader/requirements.txt
 
 https://www.douyin.com/video/7475254041207950642
 https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed

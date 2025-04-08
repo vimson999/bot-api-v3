@@ -36,7 +36,12 @@ class AudioTranscriptionError(Exception):
 
 class ScriptService:
     """脚本服务类，提供音频下载与转写功能"""
-    
+    # 添加类级别的模型缓存和线程池
+    _model_cache = {}  # 类变量，用于缓存不同设备上的不同模型
+    _thread_pool = None  # 类变量，共享线程池
+    _max_concurrent_tasks = 20  # 最大并发任务数
+    _model_lock = None  # 模型加载锁
+
     def __init__(self, 
                  temp_dir: Optional[str] = None, 
                  whisper_model: str = "small",
@@ -59,6 +64,15 @@ class ScriptService:
         
         # 确保临时目录存在
         os.makedirs(self.temp_dir, exist_ok=True)
+
+        # 初始化类变量（仅首次）
+        if ScriptService._thread_pool is None:
+            import threading
+            ScriptService._thread_pool = ThreadPoolExecutor(
+                max_workers=self._max_concurrent_tasks,
+                thread_name_prefix="whisper_worker"
+            )
+            ScriptService._model_lock = threading.Lock()
     
     def _get_whisper_model(self) -> Any:
         """
@@ -77,23 +91,36 @@ class ScriptService:
             return self.whisper_model
             
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        
-        try:
-            logger.info(f"加载Whisper {self.whisper_model_name}模型到{device}设备", extra={"request_id": trace_key})
-            self.whisper_model = whisper.load_model(self.whisper_model_name, device=device)
-            return self.whisper_model
-        except RuntimeError as e:
-            # GPU内存不足时回退到CPU
-            if "CUDA out of memory" in str(e):
-                logger.warning(f"GPU内存不足，回退到CPU: {str(e)}", extra={"request_id": trace_key})
-                self.whisper_model = whisper.load_model(self.whisper_model_name, device="cpu")
-                return self.whisper_model
-            
-            logger.error(f"Whisper模型加载失败: {str(e)}", extra={"request_id": trace_key})
-            raise AudioTranscriptionError(f"模型加载失败: {str(e)}") from e
-        except Exception as e:
-            logger.error(f"Whisper模型加载失败: {str(e)}", extra={"request_id": trace_key})
-            raise AudioTranscriptionError(f"模型加载失败: {str(e)}") from e
+        model_key = f"{self.whisper_model_name}_{device}"
+
+        # 检查缓存中是否已有模型
+        if model_key in ScriptService._model_cache:
+            return ScriptService._model_cache[model_key]
+
+        # 使用锁确保模型只被加载一次
+        with ScriptService._model_lock:
+            # 双重检查，防止在等待锁期间其他线程已加载模型
+            if model_key in ScriptService._model_cache:
+                return ScriptService._model_cache[model_key]
+                
+            try:
+                logger.info(f"加载Whisper {self.whisper_model_name}模型到{device}设备", extra={"request_id": trace_key})
+                model = whisper.load_model(self.whisper_model_name, device=device)
+                ScriptService._model_cache[model_key] = model
+                return model
+            except RuntimeError as e:
+                # GPU内存不足时回退到CPU
+                if "CUDA out of memory" in str(e):
+                    logger.warning(f"GPU内存不足，回退到CPU: {str(e)}", extra={"request_id": trace_key})
+                    model = whisper.load_model(self.whisper_model_name, device="cpu")
+                    ScriptService._model_cache[f"{self.whisper_model_name}_cpu"] = model
+                    return model
+                
+                logger.error(f"Whisper模型加载失败: {str(e)}", extra={"request_id": trace_key})
+                raise AudioTranscriptionError(f"模型加载失败: {str(e)}") from e
+            except Exception as e:
+                logger.error(f"Whisper模型加载失败: {str(e)}", extra={"request_id": trace_key})
+                raise AudioTranscriptionError(f"模型加载失败: {str(e)}") from e
     
     @gate_keeper()
     @log_service_call(method_type="script", tollgate="10-2")
@@ -234,27 +261,41 @@ class ScriptService:
             # 加载模型
             model = self._get_whisper_model()
             
-            if audio_duration <= 1800:  # 30分钟以内直接转写
-                logger.info("音频时长小于30分钟，直接转写", extra={"request_id": trace_key})
-                result = model.transcribe(audio_path)
-                text = result.get("text", "").strip()
+            if audio_duration <= 300:  # 5分钟以内直接转写
+                logger.info("音频时长小于5分钟，直接转写", extra={"request_id": trace_key})
+                # 添加超时控制
+                import concurrent.futures
+                future = ScriptService._thread_pool.submit(
+                    lambda: model.transcribe(audio_path)
+                )
+                try:
+                    # 设置超时时间，避免单个任务阻塞太久
+                    result = future.result(timeout=max(300, audio_duration * 2))
+                    text = result.get("text", "").strip()
+                except concurrent.futures.TimeoutError:
+                    raise AudioTranscriptionError(f"音频转写超时，请尝试较短的音频")
                 
             else:
                 # 音频分割和并行转写
-                num_chunks = int(audio_duration // self.chunk_duration) + (
-                    1 if audio_duration % self.chunk_duration != 0 else 0
+                # 动态调整分片大小，避免过多小片段
+                optimal_chunk_duration = min(max(60, int(audio_duration / 40)), 180)
+                chunk_duration = optimal_chunk_duration if optimal_chunk_duration != self.chunk_duration else self.chunk_duration
+                
+                num_chunks = int(audio_duration // chunk_duration) + (
+                    1 if audio_duration % chunk_duration != 0 else 0
                 )
                 
-                logger.info(f"音频将被分割为{num_chunks}个片段进行并行处理", extra={"request_id": trace_key})
-                
+                logger.info(f"音频将被分割为{num_chunks}个片段(每段{chunk_duration}秒)进行并行处理", extra={"request_id": trace_key})
+            
                 # 创建临时目录存储切割后的音频片段
                 chunk_dir = os.path.join(self.temp_dir, f"chunks_{int(time.time())}")
                 os.makedirs(chunk_dir, exist_ok=True)
-                
-                # 处理单个音频片段
-                def process_chunk(chunk_idx: int) -> str:
-                    start_ms = chunk_idx * self.chunk_duration * 1000
-                    end_ms = min((chunk_idx + 1) * self.chunk_duration * 1000, len(audio))
+
+                # 预先分割所有音频片段，避免在线程中重复加载大音频文件
+                chunk_files = []
+                for chunk_idx in range(num_chunks):
+                    start_ms = chunk_idx * chunk_duration * 1000
+                    end_ms = min((chunk_idx + 1) * chunk_duration * 1000, len(audio))
                     
                     chunk_path = os.path.join(chunk_dir, f"chunk_{chunk_idx}.mp3")
                     temp_chunk_paths.append(chunk_path)
@@ -262,25 +303,58 @@ class ScriptService:
                     # 分割并保存音频片段
                     chunk_audio = audio[start_ms:end_ms]
                     chunk_audio.export(chunk_path, format="mp3")
+                    chunk_files.append((chunk_idx, chunk_path))
+
+                # 释放原始音频内存
+                del audio
+                import gc
+                gc.collect()  # 强制垃圾回收
+                
+                # 处理单个音频片段
+                def process_chunk(chunk_data: tuple) -> str:
+                    chunk_idx, chunk_path = chunk_data
                     
                     try:
                         logger.debug(f"开始转写片段 {chunk_idx+1}/{num_chunks}", extra={"request_id": trace_key})
-                        result = model.transcribe(chunk_path)
+                        # 使用共享线程池处理，而不是在当前线程处理
+                        future = ScriptService._thread_pool.submit(
+                            lambda: model.transcribe(chunk_path, language="zh", task="transcribe")
+                        )
+                        # 设置合理的超时时间
+                        result = future.result(timeout=max(180, chunk_duration * 2))
                         chunk_text = result.get("text", "").strip()
                         logger.debug(f"片段 {chunk_idx+1}/{num_chunks} 转写完成", extra={"request_id": trace_key})
                         return chunk_text
+                    except concurrent.futures.TimeoutError:
+                        logger.error(f"片段 {chunk_idx+1}/{num_chunks} 转写超时", extra={"request_id": trace_key})
+                        return ""
                     except Exception as e:
                         logger.error(f"片段 {chunk_idx+1}/{num_chunks} 转写失败: {str(e)}", extra={"request_id": trace_key})
                         return ""
                 
-                # 使用线程池并行处理音频片段
-                with ThreadPoolExecutor(max_workers=self.max_parallel_chunks) as executor:
-                    results = list(executor.map(process_chunk, range(num_chunks)))
+                # 限制当前请求的并行度，避免单个请求占用过多资源
+                workers = min(self.max_parallel_chunks, num_chunks, max(2, (os.cpu_count() or 4) // 2))
+                logger.info(f"使用{workers}个并行任务进行转写", extra={"request_id": trace_key})
+                
+                # 创建本地线程池，控制单个请求的并行度
+                with ThreadPoolExecutor(max_workers=workers, thread_name_prefix=f"audio_{trace_key[-6:]}") as local_executor:
+                    futures = [local_executor.submit(process_chunk, chunk_data) for chunk_data in chunk_files]
+                    results = []
                     
-                # 合并结果
-                text = "\n".join(filter(None, results))
+                    # 使用as_completed获取先完成的结果，提高整体响应速度
+                    for future in concurrent.futures.as_completed(futures):
+                        results.append(future.result())
+                    
+                # 合并结果，保持段落顺序（需要重新排序，因为as_completed返回的顺序不确定）
+                sorted_results = [""] * len(chunk_files)
+                for i, future in enumerate(futures):
+                    if future.done():
+                        chunk_idx = chunk_files[i][0]
+                        sorted_results[chunk_idx] = future.result()
+                
+                text = "\n".join(filter(None, sorted_results))
                 logger.info("所有音频片段转写完成", extra={"request_id": trace_key})
-            
+
             elapsed_time = time.time() - start_time
             logger.info_to_db(f"音频转写完成，耗时: {elapsed_time:.2f}秒", extra={"request_id": trace_key})
             
