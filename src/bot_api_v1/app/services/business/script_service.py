@@ -289,18 +289,34 @@ class ScriptService:
                 chunk_dir = os.path.join(self.temp_dir, f"chunks_{int(time.time())}")
                 os.makedirs(chunk_dir, exist_ok=True)
 
-                # 预先分割所有音频片段，避免在线程中重复加载大音频文件
                 chunk_files = []
                 for chunk_idx in range(num_chunks):
                     start_ms = chunk_idx * chunk_duration * 1000
                     end_ms = min((chunk_idx + 1) * chunk_duration * 1000, len(audio))
+                    
+                    # 确保片段长度有效
+                    if end_ms <= start_ms:
+                        logger.warning(f"跳过无效音频片段 {chunk_idx+1}/{num_chunks}: 起止时间相同", extra={"request_id": trace_key})
+                        continue
                     
                     chunk_path = os.path.join(chunk_dir, f"chunk_{chunk_idx}.mp3")
                     temp_chunk_paths.append(chunk_path)
                     
                     # 分割并保存音频片段
                     chunk_audio = audio[start_ms:end_ms]
+                    
+                    # 验证音频片段是否有效
+                    if len(chunk_audio) < 100:  # 小于100毫秒的片段可能无效
+                        logger.warning(f"跳过过短音频片段 {chunk_idx+1}/{num_chunks}: 长度仅{len(chunk_audio)}毫秒", extra={"request_id": trace_key})
+                        continue
+                        
                     chunk_audio.export(chunk_path, format="mp3")
+                    
+                    # 验证导出的文件是否有效
+                    if os.path.getsize(chunk_path) < 1024:  # 小于1KB的文件可能无效
+                        logger.warning(f"跳过无效音频文件 {chunk_idx+1}/{num_chunks}: 文件大小过小", extra={"request_id": trace_key})
+                        continue
+                        
                     chunk_files.append((chunk_idx, chunk_path))
 
                 # 释放原始音频内存
@@ -314,6 +330,22 @@ class ScriptService:
                     
                     try:
                         logger.debug(f"开始转写片段 {chunk_idx+1}/{num_chunks}", extra={"request_id": trace_key})
+                        
+                        # 再次验证文件是否存在且有效
+                        if not os.path.exists(chunk_path) or os.path.getsize(chunk_path) < 1024:
+                            logger.error(f"片段 {chunk_idx+1}/{num_chunks} 文件无效或不存在", extra={"request_id": trace_key})
+                            return ""
+                            
+                        # 尝试加载音频验证其有效性
+                        try:
+                            test_audio = AudioSegment.from_file(chunk_path)
+                            if len(test_audio) < 100:  # 小于100毫秒的片段可能无效
+                                logger.error(f"片段 {chunk_idx+1}/{num_chunks} 音频长度过短", extra={"request_id": trace_key})
+                                return ""
+                        except Exception as e:
+                            logger.error(f"片段 {chunk_idx+1}/{num_chunks} 音频加载失败: {str(e)}", extra={"request_id": trace_key})
+                            return ""
+                            
                         # 使用共享线程池处理，而不是在当前线程处理
                         future = ScriptService._thread_pool.submit(
                             lambda: model.transcribe(chunk_path, language="zh", task="transcribe")
@@ -330,8 +362,12 @@ class ScriptService:
                         logger.error(f"片段 {chunk_idx+1}/{num_chunks} 转写失败: {str(e)}", extra={"request_id": trace_key})
                         return ""
                 
+                # 检查是否有有效的音频片段
+                if not chunk_files:
+                    raise AudioTranscriptionError("无法生成有效的音频片段，请检查音频文件")
+                    
                 # 限制当前请求的并行度，避免单个请求占用过多资源
-                workers = min(self.max_parallel_chunks, num_chunks, max(2, (os.cpu_count() or 4) // 2))
+                workers = min(self.max_parallel_chunks, len(chunk_files), max(2, (os.cpu_count() or 4) // 2))
                 logger.info(f"使用{workers}个并行任务进行转写", extra={"request_id": trace_key})
                 
                 # 创建本地线程池，控制单个请求的并行度
