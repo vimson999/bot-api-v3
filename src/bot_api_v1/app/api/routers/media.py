@@ -13,6 +13,7 @@ from bot_api_v1.app.services.business.media_service import MediaService, MediaEr
 from bot_api_v1.app.core.signature import require_signature
 from bot_api_v1.app.utils.decorators.auth_feishu_sheet import require_feishu_signature
 from bot_api_v1.app.core.context import request_ctx
+import re
 
 # 导入请求模型
 from pydantic import BaseModel, HttpUrl, validator, Field
@@ -35,47 +36,63 @@ router = APIRouter(prefix="/media", tags=["媒体服务"])
 # 实例化服务
 media_service = MediaService()
 
-@router.post(
-    "/extract",
-    response_model=MediaExtractResponse,
-    responses={
-        200: {"description": "成功提取媒体内容"},
-        400: {"description": "无效的请求参数"},
-        404: {"description": "无法找到指定URL的媒体内容"},
-        500: {"description": "服务器内部错误"}
-    }
-)
-@TollgateConfig(
-    title="提取媒体内容",
-    type="media",
-    base_tollgate="10",
-    current_tollgate="1",
-    plat="api"
-)
-@require_feishu_signature()  # 添加飞书签名验证，测试模式可豁免
-@require_auth_key()  # 添加授权密钥验证，测试模式可豁免
+async def clean_url(text: str) -> Optional[str]:
+    """
+    从文本中提取并清理URL地址
+    
+    Args:
+        text (str): 需要提取URL的文本内容
+        
+    Returns:
+        Optional[str]: 返回提取出的URL，如果没有找到则返回None
+    """
+    try:
+        if not text:
+            logger.warning("收到空的URL文本")
+            return None
+            
+        # URL正则表达式匹配模式
+        url_regex = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+'
+        
+        # 执行正则表达式匹配
+        matches = re.findall(url_regex, str(text))
+        
+        if not matches:
+            logger.warning(f"未找到有效的URL: {text}")
+            return None
+            
+        url = matches[0].strip()
+        url = re.sub(r'[<>"{}|\\\'^`]', '', url)
+        
+        if not url.startswith(('http://', 'https://')):
+            logger.warning(f"URL协议不支持: {url}")
+            return None
+            
+        return url
+        
+    except Exception as e:
+        logger.error(f"URL提取失败: {str(e)}", exc_info=True)
+        return None
+
+@router.post("/extract", response_model=MediaExtractResponse)
+@TollgateConfig(title="提取媒体内容", type="media", base_tollgate="10", current_tollgate="1", plat="api")
+@require_feishu_signature()
+@require_auth_key()
 async def extract_media_content(
     request: Request,
     extract_request: MediaExtractRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    提取媒体内容信息
+    """提取媒体内容信息"""
+    # 获取上下文信息
+    trace_key = request_ctx.get_trace_key()
+    app_id = request_ctx.get_app_id()
+    source = request_ctx.get_source()
+    user_id = request_ctx.get_user_id()
+    user_name = request_ctx.get_user_name()
+    ip_address = request.client.host if request.client and hasattr(request.client, "host") else None
     
-    - 支持抖音和小红书平台
-    - 提取视频基本信息、作者信息、统计数据等
-    - 可选择是否提取文案内容
-    """
     try:
-        # 获取上下文信息用于响应
-        trace_key = request_ctx.get_trace_key()
-        app_id = request_ctx.get_app_id()
-        source = request_ctx.get_source()
-        user_id = request_ctx.get_user_id()
-        user_name = request_ctx.get_user_name()
-        # 获取客户端IP地址，处理request.client可能为None的情况
-        ip_address = request.client.host if request.client and hasattr(request.client, "host") else None
-        
         logger.info(
             f"接收媒体提取请求: {extract_request.url}",
             extra={
@@ -86,9 +103,14 @@ async def extract_media_content(
             }
         )
         
+        # 提取并验证URL
+        cleaned_url = await clean_url(extract_request.url)
+        if not cleaned_url:
+            raise MediaError("无效的URL地址或URL格式不正确")
+        
         # 提取媒体内容
         media_content = await media_service.extract_media_content(
-            url=str(extract_request.url),
+            url=cleaned_url,
             extract_text=extract_request.extract_text,
             include_comments=extract_request.include_comments
         )
@@ -129,3 +151,4 @@ async def extract_media_content(
             status_code=500,
             detail=f"处理请求时发生未知错误: {str(e)}"
         )
+

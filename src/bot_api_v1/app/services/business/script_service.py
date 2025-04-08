@@ -356,10 +356,12 @@ class ScriptService:
                         logger.debug(f"片段 {chunk_idx+1}/{num_chunks} 转写完成", extra={"request_id": trace_key})
                         return chunk_text
                     except FuturesTimeoutError:
-                        logger.error(f"片段 {chunk_idx+1}/{num_chunks} 转写超时", extra={"request_id": trace_key})
+                        total_required = 0  # 转写失败不扣分
+                        logger.error(f"片段 {chunk_idx+1}/{num_chunks} 转写超时,不扣分", extra={"request_id": trace_key})
                         return ""
                     except Exception as e:
-                        logger.error(f"片段 {chunk_idx+1}/{num_chunks} 转写失败: {str(e)}", extra={"request_id": trace_key})
+                        total_required = 0  # 转写失败不扣分
+                        logger.error(f"片段 {chunk_idx+1}/{num_chunks} 转写失败,不扣分: {str(e)}", extra={"request_id": trace_key})
                         return ""
                 
                 # 检查是否有有效的音频片段
