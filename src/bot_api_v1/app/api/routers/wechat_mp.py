@@ -466,3 +466,62 @@ async def get_order_detail(
             message=f"获取订单详情失败: {str(e)}",
             data=None
         )
+
+
+
+
+
+
+
+@router.post(
+    "/update_menu",
+    response_model=BaseResponse,
+    description="更新微信公众号菜单",
+    summary="更新微信公众号菜单"
+)
+@TollgateConfig(
+    title="更新微信公众号菜单",
+    type="trigger_wechat_menu_update",
+    base_tollgate="20",
+    current_tollgate="1",
+    plat="wechat_mp"
+)
+async def trigger_wechat_menu_update(
+    request: Request
+):
+    """
+    更新微信公众号菜单
+    """
+    trace_key = request_ctx.get_trace_key()
+    
+    try:
+        if settings.CURRENT_WECHAT_MP_MENU_VERSION < settings.TARGET_WECHAT_MP_MENU_VERSION:
+            access_token = await wechat_service._get_mp_access_token()
+            await wechat_service.create_wechat_menu(access_token)
+            
+            # 直接更新设置值
+            settings.CURRENT_WECHAT_MP_MENU_VERSION = settings.TARGET_WECHAT_MP_MENU_VERSION
+            
+            logger.info_to_db(f"成功创建微信公众号菜单,微信菜单已更新到版本 {settings.TARGET_WECHAT_MP_MENU_VERSION}")
+            return BaseResponse(
+                code=0,
+                message="菜单更新成功",
+                data=None
+            )
+        else:
+            return BaseResponse(
+                code=0,
+                message="菜单已是最新版本",
+                data=None
+            )
+    except Exception as e:
+        logger.error(
+            f"菜单更新失败 : {str(e)}",
+            exc_info=True,
+            extra={"request_id": trace_key}
+        )
+        return BaseResponse(
+            code=500,
+            message=f"菜单更新失败: {str(e)}",
+            data=None
+        )

@@ -62,6 +62,13 @@ curl -X GET "http://localhost:8083/api/health"\
   -H "x-user-uuid: user-v999" \
   -H "x-user-nickname: 你说呢" \
 
+  curl -X GET "http://localhost:8000/api/health"\
+  -H "Content-Type: application/json" \
+  -H "x-source: v9-mac-book" \
+  -H "x-app-id: local-test" \
+  -H "x-user-uuid: user-v999" \
+  -H "x-user-nickname: 你说呢"
+
   {
     "version": "0.2.0",
     "configurations": [
