@@ -1,22 +1,28 @@
+# -*- coding: utf-8 -*-
 """
-日志系统模块
+日志系统模块 (已修改，采用线程安全的异步DB Sink)
 
 提供全局日志记录功能，使用loguru增强日志展示，支持请求上下文和链路追踪。
 """
 import sys
 import json
 from datetime import datetime
+import queue # 导入 queue
+import asyncio # 导入 asyncio
+import threading # 导入 threading 用于获取当前线程
 
 from loguru import logger as loguru_logger
 from colorama import init as colorama_init
 
+# 假设这些导入路径正确
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.core.config import settings
+# from bot_api_v1.app.services.log_service import LogService # 导入 LogService
 from pathlib import Path
 from dotenv import load_dotenv
 import os
 
-# 初始化colorama，确保在Windows平台上也能正确显示颜色
+# 初始化colorama
 colorama_init()
 
 # 移除默认的loguru处理器
@@ -25,25 +31,139 @@ loguru_logger.remove()
 # 加载环境变量
 load_dotenv()
 
+# --- 新增：线程安全的异步数据库日志 Sink ---
+class AsyncDatabaseLogSink:
+    def __init__(self):
+        self.log_queue = queue.Queue() # 使用线程安全的队列
+        self._consumer_task = None # 后台消费者任务
+        self._loop = None # 事件循环
+        self._stop_event = asyncio.Event() # 用于优雅停止的事件
+
+    def write(self, message):
+        """
+        Loguru 调用此方法来写入日志记录 (可从任何线程调用).
+        我们将日志记录放入队列。
+        """
+        # message 是 Loguru 的 Record 对象 (一个字典)
+        # 我们只处理我们标记为需要存入数据库的日志
+        if message.record["extra"].get("log_to_db", False):
+            # 提取所需信息放入队列
+            log_data = {
+                "trace_key": message.record["extra"].get("request_id", 'system'),
+                "method_name": message.record["extra"].get("db_method_name", message.record["function"]), # 优先使用 extra 中指定的
+                "source": message.record["extra"].get("source", 'unknown'),
+                "app_id": message.record["extra"].get("app_id"),
+                "user_uuid": message.record["extra"].get("user_id"),
+                "user_nickname": message.record["extra"].get("user_name"),
+                "entity_id": message.record["extra"].get("entity_id"),
+                "type": message.record["extra"].get("db_type", message.record["level"].name.lower()), # 优先使用 extra
+                "tollgate": message.record["extra"].get("tollgate", '-'),
+                "level": message.record["level"].name.lower(),
+                "para": None, # 按需从 extra 获取或留空
+                "header": None, # 按需从 extra 获取或留空
+                "body": message.record["extra"].get("db_body", message.record["message"]), # 优先使用 extra
+                "memo": message.record["extra"].get("db_memo", message.record["message"]), # 优先使用 extra
+                "ip_address": message.record["extra"].get("ip_address"),
+                # "created_at": message.record["time"] # 使用 loguru 的时间
+            }
+            # 使用 put_nowait 避免阻塞日志发出线程，如果队列满了则日志会丢失 (需要监控)
+            try:
+                self.log_queue.put_nowait(log_data)
+            except queue.Full:
+                # 可以选择在这里记录一个本地错误日志，表明DB日志队列已满
+                print(f"[{datetime.now()}] WARNING: Database log queue is full. Log message dropped.", file=sys.stderr)
+            except Exception as e:
+                 print(f"[{datetime.now()}] ERROR: Failed to put log in queue: {e}", file=sys.stderr)
+
+
+    async def _consume(self):
+        """异步消费者，从队列获取日志并保存到数据库"""
+        from bot_api_v1.app.services.log_service import LogService
+
+        print(f"[{datetime.now()}] INFO: Starting database log consumer task...")
+        if not self._loop:
+            print(f"[{datetime.now()}] ERROR: Event loop not set for DB log consumer.", file=sys.stderr)
+            return
+
+        while not self._stop_event.is_set():
+            try:
+                log_data = await self._loop.run_in_executor(None, lambda: self.log_queue.get(timeout=1))
+
+                if log_data is None:
+                    print(f"[{datetime.now()}] INFO: DB log consumer received stop signal.")
+                    break
+
+                try:
+                    # 调用 LogService.save_log
+                    await LogService.save_log(**log_data)
+                except Exception as db_err:
+                    # 这里记录错误到 stderr，避免循环依赖 logger
+                    print(f"[{datetime.now()}] ERROR: Failed to save log to database via consumer: {db_err}\nData: {log_data}", file=sys.stderr)
+
+                self.log_queue.task_done()
+
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                print(f"[{datetime.now()}] INFO: DB log consumer task cancelled.")
+                break
+            except Exception as e:
+                print(f"[{datetime.now()}] CRITICAL: Database log consumer task encountered an error: {e}", file=sys.stderr)
+                await asyncio.sleep(5)
+
+        print(f"[{datetime.now()}] INFO: Database log consumer task finished.")
+
+
+    def start(self, loop: asyncio.AbstractEventLoop):
+        """启动后台消费者任务"""
+        if self._consumer_task is None or self._consumer_task.done():
+            self._loop = loop
+            self._stop_event.clear()
+            self._consumer_task = self._loop.create_task(self._consume())
+            print(f"[{datetime.now()}] INFO: DB log consumer task scheduled.")
+        else:
+            print(f"[{datetime.now()}] WARNING: DB log consumer task already running.")
+
+    async def stop(self):
+        """优雅地停止后台消费者任务"""
+        if self._consumer_task and not self._consumer_task.done():
+            print(f"[{datetime.now()}] INFO: Attempting to stop DB log consumer task...")
+            self._stop_event.set() # 设置停止事件
+            # 可以选择向队列发送一个 None 作为停止信号
+            try:
+                self.log_queue.put_nowait(None)
+            except queue.Full:
+                print(f"[{datetime.now()}] WARNING: DB log queue full while trying to send stop signal.")
+
+            try:
+                # 等待任务结束，设置超时
+                await asyncio.wait_for(self._consumer_task, timeout=10.0)
+                print(f"[{datetime.now()}] INFO: DB log consumer task stopped gracefully.")
+            except asyncio.TimeoutError:
+                print(f"[{datetime.now()}] WARNING: DB log consumer task did not stop within timeout. Cancelling forcefully.")
+                self._consumer_task.cancel()
+            except Exception as e:
+                 print(f"[{datetime.now()}] ERROR: Error while stopping DB log consumer: {e}")
+        self._consumer_task = None
+        self._loop = None
+# --- End AsyncDatabaseLogSink ---
+
+
+# 全局 Sink 实例 (稍后启动)
+# 注意：在多进程环境（如 Gunicorn 使用多个 worker）中，这种全局实例需要更复杂的处理
+# 对于单进程异步应用（如 uvicorn 单 worker），这是可行的
+db_log_sink = AsyncDatabaseLogSink()
+
+
 def setup_logger():
     """初始化并配置logger"""
-    # 获取环境变量
     log_level = settings.LOG_LEVEL.upper()
-    environment = settings.ENVIRONMENT.lower()
-    
-    # 设置日志目录
     log_dir = Path(os.getenv("LOG_DIR", Path(__file__).parent.parent / "logs"))
-    
-    try:
-        log_dir.mkdir(exist_ok=True)
-    except Exception as e:
-        print(f"无法创建日志目录: {e}")
-        raise
-    
-    # 添加控制台输出处理器
+    log_dir.mkdir(exist_ok=True)
+
+    # 添加控制台输出处理器 (保持不变)
     loguru_logger.add(
         sys.stderr,
-        # 日志格式应该使用与上下文相同的变量名
         format=(
             "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
             "<blue>{extra[tollgate]}</blue> | "
@@ -53,270 +173,208 @@ def setup_logger():
             "<yellow>{extra[user_name]}</yellow> | "
             "<bold><blue>[{extra[request_id]}]</blue></bold> | "
             "<level>{level: <8}</level> | "
-            "<cyan>{name}</cyan>:<cyan>{function}</cyan> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan> | " # 注意：这里没有行号
             "<level>{message}</level>"
         ),
-        level=log_level,
-        colorize=True,
-        backtrace=True,
-        diagnose=True,
+        level=log_level, colorize=True, backtrace=True, diagnose=True,
     )
-    
-    # 添加文件处理器
+
+    # 添加文件处理器 (保持不变)
     loguru_logger.add(
         log_dir / "api.log",
         format=(
-            "{time:YYYY-MM-DD HH:mm:ss} | "
-            "{extra[tollgate]} | "
-            "{extra[source]} | "
-            "{extra[app_id]} | "
-            "{extra[user_id]} | "
-            "{extra[user_name]} | "
-            "[{extra[request_id]}] | "
-            "{level: <8} | "
-            "{name}:{function} | "
-            "{message}"
-        ),        
-        level=log_level,
-        rotation="00:00",  # 每天午夜轮转
-        compression="gz",  # 使用gzip压缩
-        retention="30 days",  # 保留30天
-        encoding="utf-8",
-        backtrace=True,
-        diagnose=True,
+            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+            "<blue>{extra[tollgate]}</blue> | "
+            "<blue>{extra[source]}</blue> | "
+            "<cyan>{extra[app_id]}</cyan> | "
+            "<magenta>{extra[user_id]}</magenta> | "
+            "<yellow>{extra[user_name]}</yellow> | "
+            "<bold><blue>[{extra[request_id]}]</blue></bold> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan> | " # 注意：这里没有行号
+            "<level>{message}</level>"
+        ),
+        level=log_level, rotation="00:00", compression="gz", retention="30 days",
+        encoding="utf-8", backtrace=True, diagnose=True,
     )
-    
+
+    # --- 修改：添加异步数据库 Sink ---
+    # 过滤规则：只处理 level >= INFO 且 extra 中包含 'log_to_db' = True 的记录
+    def db_filter(record):
+        return record["extra"].get("log_to_db", False) and record["level"].no >= loguru_logger.level("INFO").no
+
+    loguru_logger.add(
+        db_log_sink.write, # 将 sink 实例的 write 方法作为 sink
+        level="INFO",      # 最低处理 INFO 级别
+        filter=db_filter,  # 使用上面的过滤器
+        enqueue=False      # Loguru 的 enqueue 对我们的自定义队列模式不是必需的
+                           # 并且在异步 Sink 中使用 enqueue=True 可能导致问题
+    )
+    # --- 结束修改 ---
+
+    # 初始绑定保持不变
     return loguru_logger.bind(request_id="-", source="-", app_id="-", user_id="-", user_name="-",tollgate="-")
 
 
 class LoggerInterface:
-    """日志接口封装，提供与原标准logger兼容的方法"""
-    
+    """日志接口封装"""
+
     def __init__(self, logger_instance):
         self._logger = logger_instance
-    
-    def debug(self, msg, *args, **kwargs):
-        """记录DEBUG级别日志"""
-        extra = self._get_extra(kwargs)
-        self._logger.bind(**extra).debug(msg)
-    
-    def info(self, msg, *args, **kwargs):
-        """记录INFO级别日志"""
-        extra = self._get_extra(kwargs)
-        self._logger.bind(**extra).info(msg)
-    
-    def warning(self, msg, *args, **kwargs):
-        """记录WARNING级别日志"""
-        extra = self._get_extra(kwargs)
-        self._logger.bind(**extra).warning(msg)
-    
-    
 
-    def error(self, msg, *args, **kwargs):
-        """记录ERROR级别日志，同时保存到数据库"""
-        # 1. 获取上下文信息
-        extra = self._get_extra(kwargs)
-        trace_key = extra.get('request_id', 'system')
-        exc_info = kwargs.get('exc_info', False)
-        
-        # 2. 记录到文本日志
-        self._logger.bind(**extra).error(msg, exception=exc_info)
-        
-        # 3. 获取其他日志相关信息
-        method_name = kwargs.get('method_name', extra.get('method_name', 'unknown'))
-        source = extra.get('source', 'api')
-        app_id = extra.get('app_id', None)
-        user_uuid = extra.get('user_id', None)
-        user_nickname = extra.get('user_name', None)
-        ip_address = extra.get('ip_address', None)
-        
-        # 确定tollgate值，错误通常使用base-9格式
-        base_tollgate = extra.get('base_tollgate', '10')
-        error_tollgate = f'{base_tollgate}-9'
-        
-        # 4. 使用全局任务系统注册异步日志任务，但不等待完成
-        from bot_api_v1.app.tasks.base import register_task, TASK_TYPE_LOG
-        from bot_api_v1.app.services.log_service import LogService
-        
-        try:
-            # 如果提供了异常信息，获取更详细的错误内容
-            error_detail = None
-            error_traceback = None
-
-            if exc_info:
-                import traceback
-                
-                if isinstance(exc_info, Exception):
-                    # 如果直接传入了异常对象
-                    error_detail = str(exc_info)
-                    # 获取这个异常的堆栈跟踪
-                    error_traceback = ''.join(traceback.format_exception(type(exc_info), exc_info, exc_info.__traceback__))
-                elif exc_info is True:
-                    # 如果exc_info为True，获取当前异常信息
-                    exc_type, exc_value, exc_tb = sys.exc_info()
-                    if exc_value is not None:
-                        error_detail = str(exc_value)
-                        # 获取当前异常的堆栈跟踪
-                        error_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
-
-            # 组合详细错误信息和堆栈跟踪
-            full_error_info = f"{msg}\n\nDetails: {error_detail or 'No additional details'}"
-            if error_traceback:
-                full_error_info += f"\n\nTraceback:\n{error_traceback}"
-            
-            # 注册异步任务保存日志到数据库
-            register_task(
-                name=f"error_log:{method_name}",
-                coro=LogService.save_log(
-                    trace_key=trace_key,
-                    method_name=method_name,
-                    source=source,
-                    app_id=app_id,
-                    user_uuid=user_uuid,
-                    user_nickname=user_nickname,
-                    entity_id=None,
-                    type="error",
-                    tollgate=error_tollgate,
-                    level="error",
-                    para=None,
-                    header=None,
-                    body=full_error_info,  # 使用包含详细信息和堆栈跟踪的完整错误信息
-                    memo=f"Error: {msg}",  # memo仍保持简短以便于快速概览
-                    ip_address=ip_address
-                ),
-                timeout=60,  # 设置日志超时时间为60秒
-                task_type=TASK_TYPE_LOG
-            )
-        except Exception as log_error:
-            # 如果注册任务失败，记录到文本日志但不抛出异常
-            self._logger.bind(**extra).warning(
-                f"Error logging to database failed: {str(log_error)}"
-            )
-
-    
-    def critical(self, msg, *args, **kwargs):
-        """记录CRITICAL级别日志"""
-        extra = self._get_extra(kwargs)
-        exc_info = kwargs.get('exc_info', False)
-        self._logger.bind(**extra).critical(msg, exception=exc_info)
-    
-    def exception(self, msg, *args, **kwargs):
-        """记录带有异常堆栈的ERROR级别日志"""
-        extra = self._get_extra(kwargs)
-        self._logger.bind(**extra).exception(msg)
-    
-    
-    # def gigg(self, level, msg, *args, **kwargs):
-    #     """记录自定义级别日志"""
-    #     extra = self._get_extra(kwargs)
-
-    #     current_ctx = request_ctx.get_context()
-
-    #     base_tollgate = current_ctx.get('base_tollgate', '-')
-    #     current_tollgate = current_ctx.get('current_tollgate', '-')
-    #     extra['tollgate'] = f'{base_tollgate}-{current_tollgate}'
-
-    #     self._logger.bind(**extra).info(msg)
-
-    def _get_extra(self, kwargs):
-        """从kwargs中提取extra信息并增加请求上下文信息"""
-        extra = kwargs.get('extra', {})
-        # extra = copy.deepcopy(kwargs.get('extra', {}))  # 深度拷贝避免引用污染
-        # current_ctx = copy.deepcopy(request_ctx.get_context())  # 深度拷贝上下文
-
-        
+    def _prepare_extra(self, kwargs):
+        """准备 extra 字典，合并上下文信息"""
+        extra = kwargs.pop('extra', {}) # 从 kwargs 中移除 extra
         # 获取最新的上下文数据
         current_ctx = request_ctx.get_context()
-        
-        # 如果没有提供extra中的字段，则从请求上下文中获取
-        if 'request_id' not in extra:
-            extra['request_id'] = current_ctx.get('trace_key', 'system')
-        
-        # 添加其他上下文信息
-        if 'source' not in extra:
-            extra['source'] = current_ctx.get('source', '-')
-        
-        if 'app_id' not in extra:
-            extra['app_id'] = current_ctx.get('app_id', '-')
-        
-        if 'user_id' not in extra:
-            extra['user_id'] = current_ctx.get('user_id', '-')
-        
-        if 'user_name' not in extra:
-            extra['user_name'] = current_ctx.get('user_name', '-')
+        # 更新 extra，优先使用 kwargs 中提供的值，其次是上下文，最后是默认值
+        final_extra = {
+            'request_id': current_ctx.get('trace_key', 'system'),
+            'source': current_ctx.get('source', '-'),
+            'app_id': current_ctx.get('app_id', '-'),
+            'user_id': current_ctx.get('user_id', '-'),
+            'user_name': current_ctx.get('user_name', '-'),
+            'tollgate': f"{current_ctx.get('base_tollgate', '-')}-{current_ctx.get('current_tollgate', '-')}",
+            'ip_address': current_ctx.get('ip_address'), # 从上下文获取IP
+            **extra # 应用调用时传入的 extra 覆盖默认值
+        }
+        # 保留原始 kwargs 中的 exc_info 等参数
+        final_kwargs = kwargs
+        return final_extra, final_kwargs
 
-        # 直接从上下文获取最新的tollgate值
-        if 'tollgate' not in extra:
-            base_tollgate = current_ctx.get('base_tollgate', '-')
-            current_tollgate = current_ctx.get('current_tollgate', '-')
-            extra['tollgate'] = f'{base_tollgate}-{current_tollgate}'
-        
-        return extra
+
+    def debug(self, msg, *args, **kwargs):
+        extra, remaining_kwargs = self._prepare_extra(kwargs)
+        self._logger.bind(**extra).debug(msg, *args, **remaining_kwargs)
+
+    def info(self, msg, *args, **kwargs):
+        extra, remaining_kwargs = self._prepare_extra(kwargs)
+        self._logger.bind(**extra).info(msg, *args, **remaining_kwargs)
+
+    def warning(self, msg, *args, **kwargs):
+        extra, remaining_kwargs = self._prepare_extra(kwargs)
+        self._logger.bind(**extra).warning(msg, *args, **remaining_kwargs)
+
+    def error(self, msg, *args, **kwargs):
+        """记录ERROR级别日志，自动标记以便写入数据库"""
+        extra, remaining_kwargs = self._prepare_extra(kwargs)
+        exc_info = remaining_kwargs.get('exc_info', False) # 保留 exc_info 处理
+
+        # --- 修改：标记此日志需要写入数据库 ---
+        extra["log_to_db"] = True
+        extra["db_level"] = "error" # 可选，明确指定DB中的级别
+        # 如果需要，可以传递特定的 method_name 等给 DB Sink
+        if 'method_name' in remaining_kwargs:
+             extra['db_method_name'] = remaining_kwargs.pop('method_name')
+        # 将详细错误（如果计算了）放入 extra 供 sink 使用
+        error_detail, error_traceback = self._get_error_details(exc_info)
+        if error_detail or error_traceback:
+             full_error_info = f"{msg}\n\nDetails: {error_detail or 'No details'}"
+             if error_traceback: full_error_info += f"\n\nTraceback:\n{error_traceback}"
+             extra["db_body"] = full_error_info # 让 sink 处理 body
+             extra["db_memo"] = msg # 保持 memo 简洁
+
+        # --- 修改：不再调用 register_task ---
+        # 只调用底层的 loguru logger
+        self._logger.bind(**extra).error(msg, *args, **remaining_kwargs) # 传递原始 exc_info
+
+    def critical(self, msg, *args, **kwargs):
+        extra, remaining_kwargs = self._prepare_extra(kwargs)
+        extra["log_to_db"] = True # Critical 错误也应该记录到DB
+        extra["db_level"] = "critical"
+        if 'method_name' in remaining_kwargs: extra['db_method_name'] = remaining_kwargs.pop('method_name')
+        # ... (可以添加错误详情提取逻辑) ...
+        self._logger.bind(**extra).critical(msg, *args, **remaining_kwargs)
+
+    def exception(self, msg, *args, **kwargs):
+        """记录带有异常堆栈的ERROR级别日志"""
+        # exception() 相当于 error() 并自动设置了 exc_info=True
+        kwargs['exc_info'] = True
+        self.error(msg, *args, **kwargs) # 直接调用修改后的 error 方法
 
     def info_to_db(self, msg, *args, **kwargs):
-        """记录ERROR级别日志，同时保存到数据库"""
-        # 1. 获取上下文信息
-        extra = self._get_extra(kwargs)
-        trace_key = extra.get('request_id', 'system')
-        exc_info = kwargs.get('exc_info', False)
-        
-        # 2. 记录到文本日志
-        self._logger.bind(**extra).info(msg)
-        
-        # 3. 获取其他日志相关信息
-        method_name = kwargs.get('method_name', extra.get('method_name', 'unknown'))
-        source = extra.get('source', 'api')
-        app_id = extra.get('app_id', None)
-        user_uuid = extra.get('user_id', None)
-        user_nickname = extra.get('user_name', None)
-        ip_address = extra.get('ip_address', None)
-        
-        # 确定tollgate值，错误通常使用base-9格式
-        current_tollgate = extra.get('current_tollgate', '10')
-        type = extra.get('type', 'api')
+        """记录 INFO 级别日志，并强制标记写入数据库"""
+        extra, remaining_kwargs = self._prepare_extra(kwargs)
+
+        # --- 修改：标记此日志需要写入数据库 ---
+        extra["log_to_db"] = True
+        extra["db_level"] = "info" # 指定DB中的级别
+        # 传递 method_name 等信息给 Sink
+        if 'method_name' in remaining_kwargs:
+             extra['db_method_name'] = remaining_kwargs.pop('method_name')
+        # 对于 info_to_db，通常 msg 就是主要内容
+        extra["db_memo"] = msg
+        # 如果需要区分 body 和 memo，可以设计 extra 字段
+        # extra["db_body"] = ...
+
+        # --- 修改：不再调用 register_task ---
+        self._logger.bind(**extra).info(msg, *args, **remaining_kwargs)
+
+    def _get_error_details(self, exc_info):
+        """辅助方法：提取异常详情和堆栈"""
+        error_detail = None
+        error_traceback = None
+        if exc_info:
+            import traceback
+            current_exc_info = sys.exc_info() # 获取当前线程的异常信息
+            exc_type, exc_value, exc_tb = None, None, None
+
+            if isinstance(exc_info, tuple) and len(exc_info) == 3:
+                 exc_type, exc_value, exc_tb = exc_info # 如果传入了异常元组
+            elif isinstance(exc_info, Exception):
+                 exc_value = exc_info # 如果直接传入了异常对象
+                 exc_type = type(exc_value)
+                 exc_tb = exc_value.__traceback__
+            elif exc_info is True and current_exc_info[1] is not None:
+                 exc_type, exc_value, exc_tb = current_exc_info # 使用当前上下文的异常
+
+            if exc_value is not None:
+                 error_detail = str(exc_value)
+                 try:
+                      # 尝试格式化堆栈跟踪
+                      error_traceback = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+                 except Exception:
+                      error_traceback = "Failed to format traceback." # 格式化失败时提供提示
+
+        return error_detail, error_traceback
 
 
-        # 4. 使用全局任务系统注册异步日志任务，但不等待完成
-        from bot_api_v1.app.tasks.base import register_task, TASK_TYPE_LOG
-        from bot_api_v1.app.services.log_service import LogService
-        
-        try:# 注册异步任务保存日志到数据库
-            register_task(
-                name=f"log_to_db:{method_name}",
-                coro=LogService.save_log(
-                    trace_key=trace_key,
-                    method_name=method_name,
-                    source=source,
-                    app_id=app_id,
-                    user_uuid=user_uuid,
-                    user_nickname=user_nickname,
-                    entity_id=None,
-                    type=type,
-                    tollgate=current_tollgate,
-                    level="info",
-                    para=None,
-                    header=None,
-                    body='',  # 使用包含详细信息和堆栈跟踪的完整错误信息
-                    memo=msg,  # memo仍保持简短以便于快速概览
-                    ip_address=ip_address
-                ),
-                timeout=60,  # 设置日志超时时间为60秒
-                task_type=TASK_TYPE_LOG
-            )
-        except Exception as log_error:
-            # 如果注册任务失败，记录到文本日志但不抛出异常
-            self._logger.bind(**extra).warning(
-                f"Error logging to database failed: {str(log_error)}"
-            )
-
-
-
-# 初始化logger并创建接口
+# --- 修改：初始化和导出 ---
+# 初始化logger（但不启动DB Sink的消费者）
 _base_logger = setup_logger()
 logger = LoggerInterface(_base_logger)
 
-# 导出日志器
-__all__ = ["logger"]
+# 导出日志器和 Sink 实例（应用启动时需要启动 Sink）
+__all__ = ["logger", "db_log_sink"]
 
 # 记录日志初始化完成
-logger.info("Logger initialization completed with loguru")
+logger.info("Logger initialization completed with loguru and async DB sink configured (consumer task needs starting).")
+
+# --- 如何启动和停止消费者任务？---
+# 你需要在你的主应用（例如 FastAPI/Starlette 应用）的启动和关闭事件中处理
+# 示例 (FastAPI):
+#
+# from fastapi import FastAPI
+# from your_logger_module import logger, db_log_sink
+# import asyncio
+#
+# app = FastAPI()
+#
+# @app.on_event("startup")
+# async def startup_event():
+#     logger.info("Application startup: Starting DB log consumer...")
+#     try:
+#         loop = asyncio.get_running_loop()
+#         db_log_sink.start(loop) # 启动消费者
+#     except Exception as e:
+#         logger.error(f"Failed to start DB log consumer: {e}", exc_info=True)
+#
+# @app.on_event("shutdown")
+# async def shutdown_event():
+#     logger.info("Application shutdown: Stopping DB log consumer...")
+#     try:
+#         await db_log_sink.stop() # 优雅停止
+#     except Exception as e:
+#         logger.error(f"Failed to stop DB log consumer gracefully: {e}", exc_info=True)
+#
+# # ... 你的其他 API 路由 ...

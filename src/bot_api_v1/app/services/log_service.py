@@ -3,7 +3,6 @@ from typing import Dict, Any, Optional
 from datetime import datetime
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
-from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.models.log_trace import LogTrace
 from bot_api_v1.app.db.session import async_session_maker
 import contextlib
@@ -28,6 +27,9 @@ class LogService:
         memo: Optional[str] = None,
         ip_address: Optional[str] = None
     ):
+        from bot_api_v1.app.core.logger import logger
+        session: Optional[AsyncSession] = None # 显式初始化
+
         """异步保存日志到PostgreSQL数据库"""
         async with contextlib.AsyncExitStack() as stack:
             try:
@@ -87,9 +89,19 @@ class LogService:
                 
                 session.add(log_entry)
                 await session.commit()
-                return True
+                # return True
             except Exception as e:
-                logger.error(f"Failed to save log to PostgreSQL database: {str(e)}", exc_info=True)
-                if 'session' in locals():
-                    await session.rollback()
-                return False
+                # >>> 在这里使用导入的 logger <<<
+                # 注意：如果这里的 logger.error 再次触发异步DB日志，仍可能出问题
+                # 更安全的做法是直接打印到 stderr 或记录到文件日志
+                error_msg = f"Failed to save log to PostgreSQL database: {str(e)}"
+                print(f"[{datetime.now()}] {error_msg}", file=sys.stderr) # 直接打印错误
+                # 或者如果你确信 logger.error 配置了安全的同步处理器:
+                # logger.error(error_msg, exc_info=True, extra={'request_id': trace_key}) # 但要小心循环！
+
+                if session is not None: # 检查 session 是否已成功创建
+                    try:
+                        await session.rollback()
+                    except Exception as rb_err:
+                         print(f"[{datetime.now()}] ERROR: Failed to rollback session after DB log error: {rb_err}", file=sys.stderr)
+                # 注意：保存失败时不再返回 False

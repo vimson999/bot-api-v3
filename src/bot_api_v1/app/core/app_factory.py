@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from bot_api_v1.app.middlewares.logging_middleware import log_middleware
 from bot_api_v1.app.middlewares.request_counter import add_request_counter
-from bot_api_v1.app.core.logger import logger
+from bot_api_v1.app.core.logger import logger,db_log_sink
 from bot_api_v1.app.core.exceptions import http_exception_handler, CustomException
 from bot_api_v1.app.api.main import router as api_router
 from bot_api_v1.app.tasks.base import wait_for_tasks, wait_for_log_tasks, TASK_TYPE_LOG
@@ -153,6 +153,9 @@ def create_app():
             # 仅在开发环境中创建测试数据
             # if settings.ENVIRONMENT == "development" and settings.CREATE_TEST_DATA:
             #     await create_test_data()
+
+            loop = asyncio.get_running_loop()
+            db_log_sink.start(loop) # 启动消费者
                 
             logger.info(f"Application startup completed in {settings.ENVIRONMENT} environment")
         except Exception as e:
@@ -177,6 +180,7 @@ def create_app():
             logger.info("Waiting for all remaining tasks to complete...")
             await wait_for_tasks(timeout=30)  # 其他任务等待30秒
             
+            await db_log_sink.stop() # 优雅停止
             logger.info("All tasks completed successfully")
         except Exception as e:
             logger.error(f"Error during task shutdown: {str(e)}", exc_info=True)
