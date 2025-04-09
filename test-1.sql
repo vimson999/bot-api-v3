@@ -55,7 +55,7 @@ curl -X POST "http://localhost:8000/api/script/transcribe" \
   -d '{"url": "https://www.youtube.com/shorts/O8GAUEDR0Is"}'
 
 
-curl -X GET "http://localhost:8000/api/health"\
+curl -X GET "http://localhost:8083/api/health"\
   -H "Content-Type: application/json" \
   -H "x-source: v9-mac-book" \
   -H "x-app-id: local-test" \
@@ -556,7 +556,7 @@ sudo journalctl -u bot_api -n 25 --no-pager
 
 
 
- tree -L 7 -I 'venv'
+ tree -L 10 -I 'venv|__pycache__|node_modules|.git|.idea|.vscode|static|dist|logs|tmp|.env|docs'
 
 
 

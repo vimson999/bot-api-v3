@@ -127,66 +127,56 @@ class TikTokService:
         """
         Set up the necessary imports from the TikTok downloader library.
         Handles path configuration and imports.
-        
+
         Raises:
             ImportError: If required modules cannot be imported
         """
         try:
-            # 使用配置中提供的路径
+            # 使用配置中提供的子模块路径
             tiktok_root = Path(self.tiktok_lib_path)
-            
-            # Add TikTok downloader path to system path if not already there
-            # if str(tiktok_root) not in sys.path:
-            #     sys.path.append(str(tiktok_root))
-            #     logger.debug(f"Added {tiktok_root} to Python path")
+            tiktok_src_path = tiktok_root / "src" # 子模块内部的 src 目录
 
-            tiktok_src_path = tiktok_root / "src"
-            # Add TikTok downloader src path to system path if not already there
+            # 检查子模块路径是否存在
+            if not tiktok_root.is_dir() or not tiktok_src_path.is_dir():
+                logger.error(f"TikTok downloader path or its src directory not found: {tiktok_src_path}")
+                # 可能是子模块未初始化，提示用户
+                raise ImportError(f"TikTok downloader library not found at {tiktok_root}. Did you run 'git submodule update --init --recursive'?")
+
+            # 将子模块的 src 目录添加到 Python 搜索路径 (sys.path)
+            # 使用 insert(0, ...) 确保它优先于其他路径，以防命名冲突
             if str(tiktok_src_path) not in sys.path:
-                sys.path.append(str(tiktok_src_path))
+                sys.path.insert(0, str(tiktok_src_path))
                 logger.debug(f"Added {tiktok_src_path} to Python path")
-            
-            # Store original directory to restore later
+
+            # --- 处理工作目录更改 (存在风险) ---
+            # 存储原始工作目录，以便后续恢复
             self._original_dir = os.getcwd()
-            
-            # Temporarily change working directory for correct module loading
-            os.chdir(str(tiktok_root))
-            logger.debug(f"Changed working directory to {tiktok_root}")
-            
-            # Import TikTok downloader modules
-            # from src.config import Settings, Parameter
-            # from src.custom import PROJECT_ROOT
-            # from src.tools import ColorfulConsole
-            # from src.module import Cookie
-            # from src.interface import Detail, User
-            # from src.link import Extractor
-            # from src.extract import Extractor as DataExtractor
-            # from src.record import BaseLogger
-            
+            # 警告：os.chdir 更改全局状态，在并发或库代码中存在风险。
+            # 只有在确认 tiktok_downloader 库严格要求在其根目录运行时才应保留。
+            # 如果可能，应避免使用 os.chdir。
+            if os.getcwd() != str(tiktok_root): # 避免不必要的切换
+                os.chdir(str(tiktok_root))
+                logger.debug(f"Changed working directory to {tiktok_root} (Required by submodule?)")
+            # --- 工作目录更改结束 ---
 
-            from bot_api_v1.libs.tiktok_downloader.src.config import Settings, Parameter
-            from bot_api_v1.libs.tiktok_downloader.src.custom import PROJECT_ROOT
-            from bot_api_v1.libs.tiktok_downloader.src.tools import ColorfulConsole
-            from bot_api_v1.libs.tiktok_downloader.src.module import Cookie
-            from bot_api_v1.libs.tiktok_downloader.src.interface import Detail, User
-            from bot_api_v1.libs.tiktok_downloader.src.link import Extractor
-            from bot_api_v1.libs.tiktok_downloader.src.extract import Extractor as DataExtractor
-            from bot_api_v1.libs.tiktok_downloader.src.record import BaseLogger
+            # --- 正确的导入语句 ---
+            # 因为 tiktok_src_path 已经在 sys.path 中，所以直接从其下的模块导入
+            from config import Settings, Parameter
+            # 假设 PROJECT_ROOT 在 custom 包/模块中定义
+            # (根据 tree 输出, custom 是 tiktok_src_path 下的一个包)
+            from custom import PROJECT_ROOT
+            from tools import ColorfulConsole
+            from module import Cookie
+            from interface import Detail, User
+            from link import Extractor
+            from extract import Extractor as DataExtractor # 别名保持不变
+            from record import BaseLogger
 
-            # from src.config import Settings, Parameter
-            # from src.custom import PROJECT_ROOT
-            # from src.tools import ColorfulConsole
-            # from src.module import Cookie
-            # from src.interface import Detail, User
-            # from src.link import Extractor
-            # from src.extract import Extractor as DataExtractor
-            # from src.record import BaseLogger
-            
-            # Store the imports
+            # 存储导入的模块/类，供服务实例使用
             self._imports = {
                 "Settings": Settings,
                 "Parameter": Parameter,
-                "PROJECT_ROOT": PROJECT_ROOT,
+                "PROJECT_ROOT": PROJECT_ROOT, # 存储导入的 PROJECT_ROOT
                 "ColorfulConsole": ColorfulConsole,
                 "Cookie": Cookie,
                 "Detail": Detail,
@@ -195,16 +185,30 @@ class TikTokService:
                 "DataExtractor": DataExtractor,
                 "BaseLogger": BaseLogger
             }
-            
+            # --- 导入结束 ---
+
             logger.debug("Successfully imported TikTok downloader modules")
-            
+
         except ImportError as e:
-            # Restore directory in case of error
-            if hasattr(self, '_original_dir'):
-                os.chdir(self._original_dir)
-            
             logger.error(f"Failed to import required modules: {str(e)}")
-            raise ImportError(f"Could not import TikTok downloader modules: {str(e)}")
+            # 如果更改了工作目录，尝试在出错时恢复
+            if hasattr(self, '_original_dir') and os.getcwd() != self._original_dir:
+                try:
+                    os.chdir(self._original_dir)
+                    logger.debug(f"Restored working directory to {self._original_dir} after import error.")
+                except Exception as chdir_err:
+                    logger.error(f"Failed to restore working directory after import error: {chdir_err}")
+            # 重新抛出原始的 ImportError，添加上下文信息
+            raise ImportError(f"Could not import TikTok downloader modules (path: {tiktok_src_path}): {str(e)}") from e
+        except Exception as e: # 捕获其他可能的异常，例如路径问题
+             logger.error(f"An unexpected error occurred during TikTok downloader import setup: {str(e)}")
+             if hasattr(self, '_original_dir') and os.getcwd() != self._original_dir:
+                 try:
+                     os.chdir(self._original_dir)
+                     logger.debug(f"Restored working directory to {self._original_dir} after unexpected error.")
+                 except Exception as chdir_err:
+                     logger.error(f"Failed to restore working directory after unexpected error: {chdir_err}")
+             raise InitializationError(f"Setup failed for TikTok downloader: {str(e)}") from e
     
     async def __aenter__(self) -> 'TikTokService':
         """
