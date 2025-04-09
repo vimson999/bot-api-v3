@@ -226,54 +226,65 @@ class ScriptService:
 
             model = self._get_whisper_model()
 
-            if audio_duration <= 300:
-                logger.info("音频时长小于或等于5分钟，直接使用原始文件转写", extra={"request_id": trace_key})
-                process_path = audio_path
-                logger.debug(f"将使用原始文件进行处理: {process_path}", extra={"request_id": trace_key})
-
-                # --- 修改：激活短音频的转写锁 ---
-                logger.debug("尝试获取短音频转写锁...", extra={"request_id": trace_key})
-                future = None # 初始化 future
-
-                # with ScriptService._transcription_lock:
-                logger.debug("短音频转写锁已获取, 提交任务...", extra={"request_id": trace_key})
-                future = ScriptService._thread_pool.submit(lambda p: model.transcribe(p, language="zh", fp16=False), process_path)
-                logger.debug("短音频转写任务已提交, 释放锁.", extra={"request_id": trace_key})
-                # --- 结束修改 ---
-
-                if future is None: # 防御性检查
-                    raise AudioTranscriptionError("未能成功提交短音频转写任务")
-
+            if audio_duration <= 3000:
+                logger.info("音频时长小于5分钟，直接转写", extra={"request_id": trace_key})
+                future = ScriptService._thread_pool.submit(
+                    lambda: model.transcribe(audio_path)
+                )
                 try:
-                    timeout_duration = max(300, audio_duration * 3)
-                    logger.debug(f"等待短音频转写结果 (超时: {timeout_duration}秒)...", extra={"request_id": trace_key})
-                    result = future.result(timeout=timeout_duration)
+                    # 设置超时时间，避免单个任务阻塞太久
+                    result = future.result(timeout=max(300, audio_duration * 2))
                     text = result.get("text", "").strip()
-                    logger.debug("短音频转写结果获取成功", extra={"request_id": trace_key})
-                except FuturesTimeoutError:
-                    total_required = 0
-                    log_message = f"短音频转写超时({timeout_duration}秒)..."
-                    logger.error(log_message, extra={"request_id": trace_key})
-                    if loop:
-                        try:
-                            db_log_msg = f"转写超时(DB): 短音频({timeout_duration}秒)"
-                            loop.call_soon_threadsafe(_schedule_db_log_safe, logger.info_to_db, db_log_msg, {'request_id': trace_key})
-                        except Exception as schedule_e:
-                            logger.error(f"无法调度超时DB日志: {schedule_e}", extra={"request_id": trace_key})
-                    raise AudioTranscriptionError(f"音频转写超时({timeout_duration}秒)...")
-                except Exception as trans_e:
-                    total_required = 0
-                    exc_type = type(trans_e).__name__
-                    exc_msg = str(trans_e)
-                    log_message = f"短音频转写失败: {exc_type} - {exc_msg}"
-                    logger.error(log_message, exc_info=True, extra={"request_id": trace_key})
-                    if loop:
-                        try:
-                            db_log_msg = f"转写失败(DB): 短音频. 类型: {exc_type}..."
-                            loop.call_soon_threadsafe(_schedule_db_log_safe, logger.info_to_db, db_log_msg, {'request_id': trace_key})
-                        except Exception as schedule_e:
-                            logger.error(f"无法调度短音频失败DB日志: {schedule_e}", extra={"request_id": trace_key})
-                    raise AudioTranscriptionError(f"音频转写失败: {exc_type}") from trans_e
+                except TimeoutError:
+                    raise AudioTranscriptionError(f"音频转写超时，请尝试较短的音频")
+                
+                # logger.info("音频时长小于或等于5分钟，直接使用原始文件转写", extra={"request_id": trace_key})
+                # process_path = audio_path
+                # logger.debug(f"将使用原始文件进行处理: {process_path}", extra={"request_id": trace_key})
+
+                # # --- 修改：激活短音频的转写锁 ---
+                # logger.debug("尝试获取短音频转写锁...", extra={"request_id": trace_key})
+                # future = None # 初始化 future
+
+                # # with ScriptService._transcription_lock:
+                # logger.debug("短音频转写锁已获取, 提交任务...", extra={"request_id": trace_key})
+                # future = ScriptService._thread_pool.submit(lambda p: model.transcribe(p, language="zh", fp16=False), process_path)
+                # logger.debug("短音频转写任务已提交, 释放锁.", extra={"request_id": trace_key})
+                # # --- 结束修改 ---
+
+                # if future is None: # 防御性检查
+                #     raise AudioTranscriptionError("未能成功提交短音频转写任务")
+
+                # try:
+                #     timeout_duration = max(300, audio_duration * 3)
+                #     logger.debug(f"等待短音频转写结果 (超时: {timeout_duration}秒)...", extra={"request_id": trace_key})
+                #     result = future.result(timeout=timeout_duration)
+                #     text = result.get("text", "").strip()
+                #     logger.debug("短音频转写结果获取成功", extra={"request_id": trace_key})
+                # except FuturesTimeoutError:
+                #     total_required = 0
+                #     log_message = f"短音频转写超时({timeout_duration}秒)..."
+                #     logger.error(log_message, extra={"request_id": trace_key})
+                #     if loop:
+                #         try:
+                #             db_log_msg = f"转写超时(DB): 短音频({timeout_duration}秒)"
+                #             loop.call_soon_threadsafe(_schedule_db_log_safe, logger.info_to_db, db_log_msg, {'request_id': trace_key})
+                #         except Exception as schedule_e:
+                #             logger.error(f"无法调度超时DB日志: {schedule_e}", extra={"request_id": trace_key})
+                #     raise AudioTranscriptionError(f"音频转写超时({timeout_duration}秒)...")
+                # except Exception as trans_e:
+                #     total_required = 0
+                #     exc_type = type(trans_e).__name__
+                #     exc_msg = str(trans_e)
+                #     log_message = f"短音频转写失败: {exc_type} - {exc_msg}"
+                #     logger.error(log_message, exc_info=True, extra={"request_id": trace_key})
+                #     if loop:
+                #         try:
+                #             db_log_msg = f"转写失败(DB): 短音频. 类型: {exc_type}..."
+                #             loop.call_soon_threadsafe(_schedule_db_log_safe, logger.info_to_db, db_log_msg, {'request_id': trace_key})
+                #         except Exception as schedule_e:
+                #             logger.error(f"无法调度短音频失败DB日志: {schedule_e}", extra={"request_id": trace_key})
+                #     raise AudioTranscriptionError(f"音频转写失败: {exc_type}") from trans_e
             else:
                 optimal_chunk_duration = min(max(100, int(audio_duration / 40)), 180)
                 chunk_duration = optimal_chunk_duration if optimal_chunk_duration != self.chunk_duration else self.chunk_duration

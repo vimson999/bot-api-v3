@@ -82,7 +82,8 @@ class Settings(BaseSettings):
     ALLOWED_HOSTS: List[str] = json.loads(os.getenv("ALLOWED_HOSTS", '["*"]'))
     
     # 日志配置
-    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")
+    # LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")
+    LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     LOG_FORMAT: str = os.getenv("LOG_FORMAT", "json")  # plain或json
     ENABLE_DB_LOGGING: bool = os.getenv("ENABLE_DB_LOGGING", "false").lower() == "true"
     LOG_TO_STDOUT: bool = os.getenv("LOG_TO_STDOUT", "true").lower() == "true"
