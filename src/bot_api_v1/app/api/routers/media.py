@@ -36,13 +36,14 @@ router = APIRouter(prefix="/media", tags=["媒体服务"])
 # 实例化服务
 media_service = MediaService()
 
+
 async def clean_url(text: str) -> Optional[str]:
     """
     从文本中提取并清理URL地址
-    
+
     Args:
         text (str): 需要提取URL的文本内容
-        
+
     Returns:
         Optional[str]: 返回提取出的URL，如果没有找到则返回None
     """
@@ -50,26 +51,26 @@ async def clean_url(text: str) -> Optional[str]:
         if not text:
             logger.warning("收到空的URL文本")
             return None
-            
-        # URL正则表达式匹配模式
-        url_regex = r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+'
-        
+
+        # 更全面的URL正则表达式匹配模式
+        url_regex = r'https?://(?:[-\w.]|[?=&/%#])+'
+
         # 执行正则表达式匹配
         matches = re.findall(url_regex, str(text))
-        
+
         if not matches:
             logger.warning(f"未找到有效的URL: {text}")
             return None
-            
+
         url = matches[0].strip()
         url = re.sub(r'[<>"{}|\\\'^`]', '', url)
-        
+
         if not url.startswith(('http://', 'https://')):
             logger.warning(f"URL协议不支持: {url}")
             return None
-            
+
         return url
-        
+
     except Exception as e:
         logger.error(f"URL提取失败: {str(e)}", exc_info=True)
         return None
@@ -108,6 +109,11 @@ async def extract_media_content(
         if not cleaned_url:
             raise MediaError("无效的URL地址或URL格式不正确")
         
+        logger.info(
+            f"提取媒体cleaned_url内容: {cleaned_url}",
+            extra={"request_id": trace_key}
+        )
+
         # 提取媒体内容
         media_content = await media_service.extract_media_content(
             url=cleaned_url,
