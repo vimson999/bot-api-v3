@@ -154,14 +154,33 @@ class TikTokService:
             logger.debug(f"Changed working directory to {tiktok_root}")
             
             # Import TikTok downloader modules
-            from src.config import Settings, Parameter
-            from src.custom import PROJECT_ROOT
-            from src.tools import ColorfulConsole
-            from src.module import Cookie
-            from src.interface import Detail, User
-            from src.link import Extractor
-            from src.extract import Extractor as DataExtractor
-            from src.record import BaseLogger
+            # from src.config import Settings, Parameter
+            # from src.custom import PROJECT_ROOT
+            # from src.tools import ColorfulConsole
+            # from src.module import Cookie
+            # from src.interface import Detail, User
+            # from src.link import Extractor
+            # from src.extract import Extractor as DataExtractor
+            # from src.record import BaseLogger
+            
+
+            from bot_api_v1.libs.tiktok_downloader.src.config import Settings, Parameter
+            from bot_api_v1.libs.tiktok_downloader.src.custom import PROJECT_ROOT
+            from bot_api_v1.libs.tiktok_downloader.src.tools import ColorfulConsole
+            from bot_api_v1.libs.tiktok_downloader.src.module import Cookie
+            from bot_api_v1.libs.tiktok_downloader.src.interface import Detail, User
+            from bot_api_v1.libs.tiktok_downloader.src.link import Extractor
+            from bot_api_v1.libs.tiktok_downloader.src.extract import Extractor as DataExtractor
+            from bot_api_v1.libs.tiktok_downloader.src.record import BaseLogger
+
+            # from src.config import Settings, Parameter
+            # from src.custom import PROJECT_ROOT
+            # from src.tools import ColorfulConsole
+            # from src.module import Cookie
+            # from src.interface import Detail, User
+            # from src.link import Extractor
+            # from src.extract import Extractor as DataExtractor
+            # from src.record import BaseLogger
             
             # Store the imports
             self._imports = {
