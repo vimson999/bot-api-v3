@@ -690,3 +690,10 @@ pip install -r src/bot_api_v1/libs/tiktok_downloader/requirements.txt
 
 https://www.douyin.com/video/7475254041207950642
 https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed
+
+
+
+export OMP_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+export CT2_NUM_THREADS=1 # 这个也加上，以覆盖 CTranslate2 可能的默认设置
+echo "OMP_NUM_THREADS 已设置为: $OMP_NUM_THREADS" # 确认设置成功
