@@ -2,14 +2,13 @@
 
 import asyncio
 from typing import Callable, Dict, Any, Optional, List, Set, Union
-import logging
 import time
 import traceback
 import uuid
 from datetime import datetime
 from functools import wraps
+from bot_api_v1.app.core.logger import logger
 
-logger = logging.getLogger(__name__)
 
 # 全局任务注册表
 _TASK_REGISTRY = {}

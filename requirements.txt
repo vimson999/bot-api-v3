@@ -21,6 +21,8 @@ h11==0.14.0
 
 # 任务队列
 celery[redis]
+redis
+
 
 # 数据验证和配置
 pydantic==2.10.6

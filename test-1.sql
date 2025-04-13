@@ -69,6 +69,15 @@ curl -X GET "http://localhost:8083/api/health"\
   -H "x-user-uuid: user-v999" \
   -H "x-user-nickname: 你说呢"
 
+
+
+  curl -X GET "http://localhost:8000/api/test"\
+  -H "Content-Type: application/json" \
+  -H "x-source: v9-mac-book" \
+  -H "x-app-id: local-test" \
+  -H "x-user-uuid: user-v999" \
+  -H "x-user-nickname: 你说呢"
+
   {
     "version": "0.2.0",
     "configurations": [
@@ -601,7 +610,9 @@ curl -X POST "http://localhost:8000/api/douyin/user/info" \
   -d '{"user_id": "MS4wLjABAAAAFec6xaVDCLvpqpB-Vd4_qsTgwFlJM1Y2r_ZSoFGHRG8t7wa1vCK1tDnmL_s22_mD"}'
 
 
-
+curl -X GET "http://localhost:8083/api/media/test/xhs_sync?extract_text=true" \
+  -H "Content-Type: application/json" \
+  -H "X-Auth-Key: your_auth_key_here"
 
 
 curl -X POST "http://www.xiaoshanqing.tech/api/media/extract" \
@@ -697,3 +708,32 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export CT2_NUM_THREADS=1 # 这个也加上，以覆盖 CTranslate2 可能的默认设置
 echo "OMP_NUM_THREADS 已设置为: $OMP_NUM_THREADS" # 确认设置成功
+
+
+celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=info
+# 在 src 目录下运行
+# 在 src 目录下
+celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=info -Q celery,media_extraction
+# 同样在 src 目录下
+celery -A bot_api_v1.app.tasks.celery_app flower --port=5555
+http://localhost:5555
+
+export LANG=zh_CN.UTF-8
+export LC_ALL=zh_CN.UTF-8
+
+
+# Celery (覆盖默认值或确认值)
+# CELERY_BROKER_URL="redis://:login4RDS!!!@101.35.56.140:6379/0"
+# CELERY_RESULT_BACKEND="redis://:login4RDS!!!@101.35.56.140:6379/1"
+
+
+
+在启动 Worker 前设置环境变量 (指向本地开发环境):
+打开运行 Celery Worker 的终端。
+确保你在 src 目录下。
+执行以下 export 命令（确保你的 Shell 支持 export，如果是 Windows cmd 可能需要用 set）：
+
+
+export CELERY_BROKER_URL='redis://localhost:6379/0' 
+export CELERY_RESULT_BACKEND='redis://localhost:6379/1' 
+export CACHE_REDIS_URL='redis://localhost:6379/2' 

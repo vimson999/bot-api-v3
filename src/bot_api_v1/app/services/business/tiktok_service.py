@@ -61,6 +61,33 @@ class AudioDownloadError(TikTokError):
     """Raised when audio download fails"""
     pass
 
+
+# --- Helper function ---
+_loop_tiktok = None
+try:
+    _loop_tiktok = asyncio.get_running_loop()
+except RuntimeError:
+    _loop_tiktok = asyncio.new_event_loop()
+    asyncio.set_event_loop(_loop_tiktok)
+
+def run_async_in_sync_tiktok(coro):
+    """专用于 TikTokService 的同步执行异步帮助函数"""
+    # ... (实现同 celery_service_logic.py 中的 run_async_in_sync) ...
+    try:
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            logger.warning("Detected running event loop in run_async_in_sync_tiktok.")
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+            return future.result(timeout=300) 
+        else:
+            return asyncio.run(coro)
+    except RuntimeError: 
+        return asyncio.run(coro)
+    except Exception as e:
+        logger.error(f"run_async_in_sync_tiktok failed: {e}", exc_info=True)
+        raise
+
+
 class TikTokService:
     """
     Production-ready service for interacting with TikTok/Douyin content.
@@ -119,7 +146,24 @@ class TikTokService:
         self.parameters = None
 
         self.script_service = ScriptService()
-        
+
+        self._imports = {} 
+        self._original_dir = os.getcwd()
+
+        class _DummyRecorderInternal: # 使用内部名称避免潜在冲突
+            """Placeholder recorder, defined during service init."""
+            def __init__(self):
+                self.field_keys = []
+
+                # logger.debug("DummyRecorder initialized.")
+                pass 
+            
+            # 同步 save 方法 (如果被同步调用)
+            def save(self, *args, **kwargs):
+                # logger.debug("DummyRecorder save called (sync).")
+                pass
+            
+        self.DummyRecorder = _DummyRecorderInternal 
         # Import required modules only when actually needed
         self._setup_imports()
     
@@ -204,6 +248,101 @@ class TikTokService:
                      logger.error(f"Failed to restore working directory after unexpected error: {chdir_err}")
              raise InitializationError(f"Setup failed for TikTok downloader: {str(e)}") from e
     
+
+# --- 新增的同步上下文管理器方法 ---
+    def __enter__(self) -> 'TikTokService':
+        """
+        [同步] 初始化服务，用于 'with' 语句。
+        将 __aenter__ 中的逻辑同步化。
+        """
+        logger.debug("Entering synchronous context (__enter__)")
+        try:
+            # !! 在这里执行 __aenter__ 中的初始化逻辑，但要用同步方式 !!
+            
+            # 1. 创建依赖的对象 (这些通常是同步的)
+            self.console = self._imports["ColorfulConsole"]()
+            self.settings = self._imports["Settings"](self._imports["PROJECT_ROOT"], self.console)
+            self.cookie_object = self._imports["Cookie"](self.settings, self.console)
+            
+            # 2. 获取设置 (同步)
+            settings_data = self.settings.read()
+            
+            # 3. 处理传入的 Cookie (同步)
+            if self.cookie:
+                try:
+                    cookie_dict = self.cookie_object.extract(self.cookie, write=False)
+                    settings_data["cookie"] = cookie_dict
+                    logger.debug("[Sync Init] Updated settings with provided cookie")
+                except Exception as e:
+                    logger.warning(f"[Sync Init] Failed to extract cookie: {str(e)}")
+            
+            # 4. 设置超时 (同步)
+            settings_data["timeout"] = self.timeout
+            
+            # 5. 初始化 Parameters (这个类的初始化需要是同步的，或者可以同步完成)
+            #    假设 Parameter 类的 __init__ 是同步的
+            self.parameters = self._imports["Parameter"](
+                self.settings, self.cookie_object, logger=self._imports["BaseLogger"],
+                console=self.console, recorder=None, **settings_data
+            )
+            
+            # 6. 设置 Headers 和 Cookie (这个方法需要是同步的)
+            #    假设 Parameter 类有同步的 set_headers_cookie 方法或在 __init__ 完成
+            self.parameters.set_headers_cookie() 
+            
+            logger.info("Synchronous TikTok service initialized successfully via __enter__")
+            return self # !! 必须返回 self !!
+            
+        except Exception as e:
+            logger.error(f"[Sync Init] Service initialization failed via __enter__: {str(e)}", exc_info=True)
+            # 清理可能部分初始化的资源？取决于你的具体逻辑
+            # 恢复工作目录（如果 _setup_imports 中更改了）
+            if hasattr(self, '_original_dir') and os.getcwd() != self._original_dir:
+                 try:
+                     os.chdir(self._original_dir)
+                     logger.debug(f"Restored working directory via __enter__ error path to {self._original_dir}")
+                 except Exception as chdir_e:
+                     logger.error(f"Failed to restore working directory in __enter__ error path: {chdir_e}")
+            raise InitializationError(f"Failed to initialize sync TikTok service: {str(e)}") from e
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """
+        [同步] 清理资源，用于 'with' 语句结束时。
+        将 __aexit__ 中的逻辑同步化。
+        """
+        logger.debug("Exiting synchronous context (__exit__)")
+        try:
+            # !! 在这里执行 __aexit__ 中的清理逻辑，但要用同步方式 !!
+            
+            # 1. 关闭 HTTP 客户端
+            if self.parameters:
+                # !! 关键：需要一种同步关闭客户端的方式 !!
+                # 如果 self.parameters.client 是 httpx.Client (同步), 可以直接 close()
+                # 如果是 httpx.AsyncClient，则不能直接 close()。
+                # 可能需要 self.parameters 提供一个同步关闭方法，或者忽略关闭（不推荐）
+                try:
+                    # 假设 Parameter 类有一个同步关闭方法或其 client 是同步的
+                    if hasattr(self.parameters, 'client') and hasattr(self.parameters.client, 'close') and callable(self.parameters.client.close):
+                         self.parameters.client.close() 
+                         logger.debug("[Sync Cleanup] Closed synchronous HTTP client via __exit__")
+                    elif hasattr(self.parameters, 'close_client_sync') and callable(self.parameters.close_client_sync):
+                         self.parameters.close_client_sync()
+                         logger.debug("[Sync Cleanup] Called close_client_sync() via __exit__")
+                    else:
+                         logger.warning("[Sync Cleanup] Cannot determine how to close the HTTP client synchronously in __exit__.")
+                except Exception as close_e:
+                     logger.error(f"[Sync Cleanup] Error closing HTTP client in __exit__: {close_e}", exc_info=True)
+
+            # 2. 恢复工作目录 (如果更改过)
+            if hasattr(self, '_original_dir') and os.getcwd() != self._original_dir:
+                os.chdir(self._original_dir)
+                logger.debug(f"Restored working directory via __exit__ to {self._original_dir}")
+                
+        except Exception as e:
+            logger.warning(f"Error during synchronous cleanup via __exit__: {str(e)}", exc_info=True)
+        # __exit__ 不应重新抛出异常（除非是特意为之），让 with 语句外的代码处理
+        return False # 返回 False 表示如果发生异常，异常应该被重新抛出
+
     async def __aenter__(self) -> 'TikTokService':
         """
         Initialize the service when entering the async context.
@@ -216,14 +355,14 @@ class TikTokService:
         """
         try:
             # Create dummy recorder to replace database functionality
-            class DummyRecorder:
-                def __init__(self):
-                    self.field_keys = []
+            # class DummyRecorder:
+            #     def __init__(self):
+            #         self.field_keys = []
                 
-                async def save(self, *args, **kwargs):
-                    pass
+            #     async def save(self, *args, **kwargs):
+            #         pass
             
-            self.DummyRecorder = DummyRecorder
+            # self.DummyRecorder = DummyRecorder
             
             # Initialize components
             self.console = self._imports["ColorfulConsole"]()
@@ -389,7 +528,10 @@ class TikTokService:
                 
                 result = processed_data[0]
                 logger.info(f"Successfully fetched info for video: {result.get('desc', 'Untitled')}")
-                
+
+                if total_required > 0:
+                    request_ctx.set_consumed_points(total_required, "基础信息获取成功")
+
                 # 提取视频文案（如果需要）
                 if extract_text and result.get("type") == MediaType.VIDEO and result.get("music_url"):
                     try:
@@ -589,6 +731,115 @@ class TikTokService:
                     raise UserFetchError(
                         f"Failed to get user info after {retries+1} attempts: {str(e)}"
                     ) from e
+
+    # --- 新增的同步方法 (供 Celery 调用) ---
+    def get_video_info_sync_for_celery(
+        self, 
+        url: str, 
+        extract_text: bool,
+        # --- 替代 request_ctx 的参数 ---
+        user_id_for_points: str, 
+        trace_id: str 
+    ) -> dict:
+        """
+        [同步执行] 获取抖音视频信息，并可选提取文本。
+        为 Celery Task 设计，不依赖 request_ctx，不写数据库。
+        """
+        log_extra = {"request_id": trace_id, "user_id": user_id_for_points}
+        logger.info(f"[Sync TikTok] 开始获取视频信息: {url}, extract_text={extract_text}", extra=log_extra)
+        
+        points_consumed = 0
+        base_cost = 10
+        transcription_cost = 0
+        media_data = None
+        transcribed_text = None
+        
+        
+        # !! 重要：需要同步初始化 !!
+        # TikTokService 使用了 __aenter__/__aexit__，这不适用于同步场景。
+        # 你需要创建一个同步的初始化方法或在 __init__ 中完成所有设置。
+        # 暂时假设可以在 __init__ 后直接使用 self.parameters 等。
+        if not self.parameters:
+             # 尝试同步初始化 (需要重构 __aenter__ 的逻辑到这里或一个新方法)
+             # self._initialize_sync() # 假设有这个方法
+             logger.error("[Sync TikTok] 服务未正确同步初始化!", extra=log_extra)
+             raise InitializationError("服务未正确同步初始化")
+
+        try:
+            # 1. 获取基础视频信息 (包装异步调用)
+            async def _fetch_tiktok_video_async():
+                # 调用原有的获取 ID 和 Detail 的异步逻辑
+                # 但需要确保它们不依赖 request_ctx
+                extractor = self._imports["Extractor"](self.parameters)
+                video_ids = await extractor.run(url)
+                if not video_ids: raise VideoFetchError(f"No video ID found in URL: {url}")
+                video_id = video_ids[0]
+                
+                detail = self._imports["Detail"](self.parameters, detail_id=video_id)
+                video_data_raw = await detail.run()
+                if not video_data_raw: raise VideoFetchError(f"Failed to fetch details for video ID: {video_id}")
+                
+                # 处理数据 (这部分通常是同步的)
+                data_extractor = self._imports["DataExtractor"](self.parameters)
+                dummy_recorder = self.DummyRecorder() # 使用内部的 DummyRecorder
+                processed_data = await data_extractor.run([video_data_raw], dummy_recorder, tiktok=False) # 确认这个 run 是 async 还是 sync
+                if not processed_data: raise VideoFetchError(f"Failed to process data for video ID: {video_id}")
+                
+                return processed_data[0]
+
+            try:
+                media_data = run_async_in_sync_tiktok(_fetch_tiktok_video_async())
+                points_consumed += base_cost
+                if not media_data: raise TikTokError("未能获取抖音基础信息")
+            except Exception as e:
+                raise TikTokError(f"获取抖音基础信息失败: {e}") from e
+
+            # 2. 如果需要提取文本
+            if extract_text and media_data.get("type") == MediaType.VIDEO:
+                # 获取媒体 URL (可能是 'music_url' 或 'video_url')
+                media_url = media_data.get("music_url") or media_data.get("downloads") # 根据你的代码调整
+                if media_url:
+                    logger.info(f"[Sync TikTok] 开始下载和转写媒体...", extra=log_extra)
+                    try:
+                        # !! 调用同步下载和转写 !!
+                        # audio_path = self._download_douyin_video_sync(media_url, trace_id) # 需要创建同步版本
+                        audio_path, _ = self.script_service.download_audio_sync(media_url, trace_id) # 或者调用 ScriptService 的
+                        transcribed_text,audio_duration_sec = self.script_service.transcribe_audio_sync(audio_path, trace_id)
+                        
+                        # 计算积分
+                        # audio_duration_sec = 100 # !! 需要获取时长 !!
+                        duration_points = ((audio_duration_sec // 60) + (1 if audio_duration_sec % 60 > 0 else 0)) * 10
+                        transcription_cost = max(10, duration_points)
+                        
+                        logger.info(f"[Sync TikTok] 媒体转写成功", extra=log_extra)
+                    except (AudioDownloadError, AudioTranscriptionError) as e:
+                        logger.error(f"[Sync TikTok] 下载或转写失败: {e}", extra=log_extra)
+                        transcribed_text = f"提取文本失败: {str(e)}"
+                        transcription_cost = 0
+                    except Exception as e:
+                         logger.error(f"[Sync TikTok] 提取文本发生意外错误: {e}", exc_info=True, extra=log_extra)
+                         transcribed_text = f"提取文本时发生内部错误 ({trace_id})"
+                         transcription_cost = 0
+                else:
+                     transcribed_text = "无法获取媒体URL进行转写"
+                     logger.warning("[Sync TikTok] 未找到媒体URL", extra=log_extra)
+                
+                media_data["transcribed_text"] = transcribed_text # 假设字段名为 transcribed_text
+            
+            points_consumed = transcription_cost
+            
+            logger.info(f"[Sync TikTok] 处理成功完成: {url}", extra=log_extra)
+            return {"status": "success", "data": media_data, "points_consumed": points_consumed}
+
+        except (TikTokError, InitializationError) as e: # 捕获已知错误
+             error_msg = f"处理失败 ({type(e).__name__}): {str(e)}"
+             logger.error(f"[Sync TikTok] {error_msg}", extra=log_extra)
+             return {"status": "failed", "error": error_msg, "points_consumed": 0}
+        except Exception as e: # 捕获其他意外错误
+             error_msg = f"发生意外错误: {str(e)}"
+             logger.error(f"[Sync TikTok] {error_msg}", exc_info=True, extra=log_extra)
+             return {"status": "failed", "error": f"发生内部错误 ({trace_id})", "exception": str(e), "points_consumed": 0}
+
     
 
 

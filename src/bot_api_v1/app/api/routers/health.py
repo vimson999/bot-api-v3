@@ -92,3 +92,46 @@ async def health_check(
         }
     )
 
+
+#增加一个测试方法
+@router.get("/test",
+    response_model=BaseResponse)
+async def test():
+    from bot_api_v1.app.tasks.celery_tasks import add, print_message, long_running_task
+    import time
+
+    print("开始触发 Celery 任务...")
+
+    # 1. 触发 add 任务
+    # .delay() 是 apply_async() 的快捷方式，用于发送任务到队列
+    result_add = add.delay(15, 27) 
+    logger.info(f"  - 触发了 add(15, 27)，任务 ID: {result_add.id}")
+
+    # 2. 触发 print_message 任务
+    result_print = print_message.delay("你好 Celery!")
+    print(f"  - 触发了 print_message，任务 ID: {result_print.id}")
+
+    # 3. 触发 long_running_tas`k 任务
+    result_long = long_running_task.delay(8) # 让它运行 8 秒
+    logger.info(f"  - 触发了 long_running_task(8)，任务 ID: {result_long.id}")
+
+    logger.info("\n所有任务已发送到队列。请观察 Celery Worker 的日志输出。")
+
+    # 我们可以尝试获取第一个任务的结果 (可选)
+    # 注意：这会阻塞，直到任务完成并返回结果
+    logger.info("\n等待 add 任务的结果...")
+    try:
+        # result_add.get() 会等待任务完成并返回结果
+        # 设置 timeout 防止无限等待 (例如 10 秒)
+        add_task_return_value = result_add.get(timeout=10) 
+        logger.info(f"  - add 任务的结果是: {add_task_return_value}")
+    except Exception as e:
+        logger.info(f"  - 获取 add 任务结果时出错或超时: {e}")
+        logger.info(f"  - add 任务当前状态: {result_add.state}")
+
+    logger.info("\n测试脚本执行完毕。")
+    return BaseResponse(
+        code=200,
+        message="测试成功",
+    )
+
