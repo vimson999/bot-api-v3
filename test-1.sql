@@ -737,3 +737,12 @@ export LC_ALL=zh_CN.UTF-8
 export CELERY_BROKER_URL='redis://localhost:6379/0' 
 export CELERY_RESULT_BACKEND='redis://localhost:6379/1' 
 export CACHE_REDIS_URL='redis://localhost:6379/2' 
+
+
+
+
+celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q celery,media_extraction -P solo
+celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q transcription -P solo
+
+(venv) v9@v9deMacBook-Pro bot-api-v1 % -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --workers=4 --loop=uvloop --
+http=httptools 

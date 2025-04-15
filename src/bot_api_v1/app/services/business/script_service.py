@@ -743,7 +743,7 @@ class ScriptService:
             elapsed_time = time.time() - start_time
             logger.info(f"[Sync] 音频转写完成，耗时: {elapsed_time:.2f}秒", extra=log_extra)
             
-            return text,audio_duration
+            return {"status": "success", "text": text, "audio_duration": audio_duration}
 
         except AudioTranscriptionError as ate:
             raise ate # 直接抛出已知错误

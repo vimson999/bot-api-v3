@@ -224,173 +224,244 @@ async def extract_media_content_smart(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"提交任务时发生未知错误 ({trace_key})")
 
 
-# --- 新的状态查询端点 ---
 @router.get(
     "/extract/status/{task_id}",
     response_model=MediaExtractStatusResponse,
-    summary="查询媒体提取任务状态和结果",
+    summary="查询媒体提取任务状态和结果 (V2 - 聚合模式)", # 更新 summary
     tags=["媒体服务"]
 )
 @TollgateConfig(title="获取提取媒体内容的任务执行结果", type="media", base_tollgate="10", current_tollgate="1", plat="api")
 @require_feishu_signature()
-@require_auth_key() # 添加必要的认证
-async def get_extract_media_status(
-    task_id: str,
+@require_auth_key()
+
+async def get_extract_media_status_v4( # 函数名加后缀以便区分
+    task_id: str, # Task A ID
     request: Request,
-    db: AsyncSession = Depends(get_db) # 依赖注入 DB Session，用于后续写库
+    db: AsyncSession = Depends(get_db)
 ):
-    """根据任务ID查询异步媒体提取任务的状态和结果。"""
-    trace_key = request_ctx.get_trace_key()
-    app_id = request_ctx.get_app_id()
-    source = request_ctx.get_source()
-    user_id = request_ctx.get_user_id()
-    user_name = request_ctx.get_user_name()
-    ip_address = request.client.host if request.client else "unknown_ip"
-    
-    log_extra = {"request_id": trace_key, "celery_task_id": task_id, "user_id": user_id}
-    logger.info(f"查询任务状态: {task_id}", extra=log_extra)
+    """
+    (V4 重写) 根据 Task A ID 查询状态。
+    检查 Task A 返回值中的内部状态，决定是否查询 Task B 并聚合结果。
+    """
+    # 1. 初始化上下文和日志
+    try:
+        trace_key = request_ctx.get_trace_key()
+        app_id = request_ctx.get_app_id()
+        source = request_ctx.get_source()
+        user_id = request_ctx.get_user_id()
+        user_name = request_ctx.get_user_name()
+        ip_address = request.client.host if request.client else "unknown_ip"
+        log_extra = {"request_id": trace_key, "celery_task_id": task_id, "user_id": user_id}
+    except Exception as ctx_err:
+        # 如果连上下文都获取失败，记录严重错误并返回
+        logger.critical(f"获取请求上下文失败: {ctx_err}", exc_info=True)
+        raise HTTPException(status_code=500, detail="无法处理请求上下文")
 
-    # 1. 调用适配器获取基本状态
-    task_info = await get_task_status(task_id) # 使用 celery_adapter 中的函数
+    logger.info(f"查询任务状态 (V4): {task_id}", extra=log_extra)
 
-    if not task_info or task_info.get("status") == "error_fetching_status":
-        logger.warning(f"未找到任务或获取状态失败: {task_id}", extra=log_extra)
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"任务 ID '{task_id}' 不存在或状态获取失败。")
-
-    current_status = task_info.get("status", "unknown")
-    error_message = task_info.get("error")
-    task_result_data = None
-    response_code = 202
-    response_message = f"任务状态: {current_status}"
-
-    # 2. 如果任务可能已完成，尝试获取详细结果
-    if current_status in ["completed", "failed"]:
-        try:
-            result_obj = AsyncResult(task_id, app=celery_app)
-            if result_obj.ready(): # 再次确认任务已就绪（完成或失败）
-                if result_obj.successful():
-                    task_return_value = result_obj.result # 获取 Celery Task 的返回值
-                    if isinstance(task_return_value, dict):
-                        task_logic_status = task_return_value.get("status")
-                        if task_logic_status == "success":
-                            # ---- 任务成功完成 ----
-                            current_status = "completed" # 确认最终状态
-                            media_data = task_return_value.get("data")
-                            points_consumed = task_return_value.get("points_consumed", 0)
-                            
-                            # logger.info(f"task_return_value is {task_return_value}", extra=log_extra)
-                            # logger.info(f"points_consumed is {points_consumed}", extra=log_extra)
-                            # logger.info(f"media_data is {media_data}", extra=log_extra)
-
-                            # 尝试构建 MediaContentResponse
-                            try:
-                                # 在构建 MediaContentResponse 前处理数据
-                                if media_data:
-                                    # 使用 MediaService 的静态方法转换数据格式
-                                    media_data = MediaService.convert_to_standard_format(media_data)
-                                
-                                # 现在尝试构建响应
-                                task_result_data = MediaContentResponse(**media_data) if media_data else None
-                                response_code=200
-                                response_message = task_return_value.get("message", "任务成功完成")
-                            except Exception as parse_err:
-                                logger.error(f"解析任务 {task_id} 成功结果中的 data 失败: {parse_err}", extra=log_extra)
-                                # 记录详细的数据结构以便调试
-                                logger.debug(f"媒体数据结构: {media_data}", extra=log_extra)
-                                current_status = "failed" # 任务成功但结果解析失败，标记为失败
-                                error_message = f"任务成功，但结果解析失败: {str(parse_err)}"
-                                response_code = 500
-
-                            # ---- 在这里执行数据库写入操作 ----
-                            if current_status == "completed" and points_consumed > 0:
-                                logger.info(f"任务 {task_id} 成功完成，准备扣除积分: {points_consumed}", extra=log_extra)
-                                try:
-                                    # !! 需要实现扣除积分的逻辑 !!
-                                    # task_user_id = ... # 需要从某处获取任务发起者的 user_id (可能需要 Celery Task 返回)
-                                    # success = await deduct_points(db, task_user_id, points_consumed, task_id)
-                                    # if not success: logger.warning(...)
-                                    request_ctx.set_consumed_points(points_consumed) # 更新请求上下文
-                                    logger.info(f"填充消耗 {points_consumed} 积分", extra=log_extra) # Placeholder
-                                    pass # Placeholder for DB write
-                                except Exception as db_err:
-                                     logger.error(f"任务 {task_id} 成功后扣除积分失败: {db_err}", exc_info=True, extra=log_extra)
-                                     # 考虑如何处理：积分未扣除，但任务已完成？
-                                     # 可以附加警告信息到响应中
-                                     response_message += " (警告: 积分扣除可能失败)"
-                            
-                            # ---- 在这里可以保存结果到数据库 (如果需要) ----
-                            # try:
-                            #    await save_extraction_result(db, task_id, task_result_data)
-                            # except Exception as save_err: ...
-
-                        elif task_logic_status == "failed":
-                             # ---- 任务内部逻辑失败 ----
-                             current_status = "failed"
-                             error_message = task_return_value.get("error", "任务报告失败，但未提供错误信息")
-                             response_message = error_message
-                             response_code = 500 # 或其他合适的状态码
-                             logger.error(f"任务 {task_id} 内部逻辑失败: {error_message}", extra=log_extra)
-                        else:
-                             # 任务成功返回，但 status 字段未知
-                             logger.error(f"任务 {task_id} 成功返回，但结果字典状态未知: {task_logic_status}", extra=log_extra)
-                             response_message = "任务完成，但结果状态未知"
-                             # 也许可以尝试解析 data
-                             media_data = task_return_value.get("data")
-                             try:
-                                 task_result_data = MediaContentResponse(**media_data) if media_data else None
-                             except: pass # 忽略解析错误
-                    else:
-                         # 任务成功，但返回值不是预期的字典格式
-                         current_status = "failed" # 视为一种失败
-                         error_message = "任务成功，但返回结果格式不正确"
-                         response_message = error_message
-                         response_code = 500
-                         logger.error(f"任务 {task_id} 成功，但返回值格式非预期: {type(task_return_value)}", extra=log_extra)
-
-                elif result_obj.failed():
-                    # ---- Celery 层面标记为失败 ----
-                    current_status = "failed"
-                    if not error_message: # 如果 get_task_status 没获取到错误
-                        error_message = str(result_obj.info) if result_obj.info else "任务失败，未知错误"
-                    response_message = error_message
-                    response_code = 500
-                    logger.error(f"任务 {task_id} 在 Celery 中标记为失败: {error_message}", extra=log_extra)
-            else:
-                 # 任务状态是 completed/failed，但 result_obj 说还没 ready？不太可能，记录一下
-                 logger.warning(f"任务 {task_id} 状态为 {current_status} 但 AsyncResult is not ready()", extra=log_extra)
-
-        except Exception as e:
-            logger.error(f"获取或解析任务 {task_id} 详细结果时出错: {e}", exc_info=True, extra=log_extra)
-            # 保留从 get_task_status 获取的基本状态信息
-            if current_status not in ["failed", "cancelled", "error_fetching_status"]:
-                current_status = "unknown_error" # 表示获取结果阶段出错
-            if not error_message:
-                error_message = f"查询任务结果时发生内部错误 ({trace_key})"
-            response_message = error_message
-
-    # 构建请求上下文 (用于响应)
+    # 构建 request_context 对象 (如果获取成功)
     request_context = RequestContext(
         trace_id=trace_key, app_id=app_id, source=source, user_id=user_id,
         user_name=user_name, ip=ip_address, timestamp=datetime.now()
     )
 
-    # 构建最终响应
-    final_response = MediaExtractStatusResponse(
-        code=response_code,
+    # 初始化默认响应值
+    response_status_code = status.HTTP_200_OK # 默认查询成功
+    response_data = None
+    response_error_msg = None
+    final_task_status = "unknown" # 返回给客户端的状态
+    response_message = "任务状态未知"
+    points_consumed = 0
+
+    try:
+        # 2. 查询 Task A
+        result_A = AsyncResult(task_id, app=celery_app)
+        status_A = result_A.state
+        result_A_data = result_A.result # Task A 返回值
+        info_A = result_A.info # Task A 失败时的信息 (或 meta)
+
+        logger.debug(f"Task A ({task_id}) Status: {status_A}, Result: {result_A_data}, Info: {info_A}", extra=log_extra)
+
+        # 3. 处理 Task A 状态
+        if status_A in ('PENDING', 'STARTED', 'RETRY'):
+            final_task_status = "running"
+            response_status_code = status.HTTP_202_ACCEPTED
+            response_message = "任务正在处理中..."
+
+        elif status_A == 'FAILURE':
+            final_task_status = "failed"
+            if isinstance(info_A, dict):
+                response_error_msg = info_A.get("error", "任务执行失败")
+                points_consumed = info_A.get("points_consumed", 0) # 通常为0
+            else:
+                response_error_msg = str(info_A or "任务执行失败")
+            response_message = response_error_msg
+            logger.error(f"Task A ({task_id}) 失败: {response_error_msg}", extra=log_extra)
+
+        elif status_A == 'SUCCESS':
+            # Task A 执行完成，需要检查其返回值 result_A_data
+            if not isinstance(result_A_data, dict):
+                 # Task A 成功了但返回值不是预期的字典 (例如返回了 None?)
+                 final_task_status = "failed"
+                 response_error_msg = "任务结果格式异常 (非字典)"
+                 response_message = response_error_msg
+                 logger.error(f"Task A ({task_id}) 状态 SUCCESS 但 result 非字典: {type(result_A_data)}", extra=log_extra)
+            else:
+                 # Task A 返回值是字典，检查内部状态
+                 task_A_internal_status = result_A_data.get('status')
+
+                 if task_A_internal_status == 'success':
+                     # Task A 直接成功完成 (例如 extract_text=False)
+                     final_task_status = "completed"
+                     media_data_dict = result_A_data.get("data")
+                     points_consumed = result_A_data.get("points_consumed", 0)
+                     response_message = result_A_data.get("message", "任务成功完成")
+                     try:
+                         # 转换并验证 Pydantic 模型
+                         if media_data_dict:
+                             media_data_dict = MediaService.convert_to_standard_format(media_data_dict)
+                             response_data = MediaContentResponse(**media_data_dict)
+                         request_ctx.set_consumed_points(points_consumed) # 设置积分
+                         # await deduct_points(...)
+                     except Exception as parse_err:
+                         logger.error(f"解析 Task A ({task_id}) 直接成功结果失败: {parse_err}", exc_info=True, extra=log_extra)
+                         final_task_status = "failed"
+                         response_error_msg = f"任务成功但结果解析失败: {parse_err}"
+                         response_message = response_error_msg
+
+                 elif task_A_internal_status == 'processing':
+                     # Task A 成功触发 Task B，需要查询 Task B
+                     final_task_status = "transcribing" # 初始为转写中
+                     response_status_code = status.HTTP_202_ACCEPTED
+                     response_message = "正在进行语音转写..."
+
+                     task_b_id = result_A_data.get('transcription_task_id')
+                     basic_info = result_A_data.get('basic_info')
+                     base_points = result_A_data.get('base_points', 0)
+
+                     if task_b_id and isinstance(basic_info, dict):
+                         # 查询 Task B
+                         result_B = AsyncResult(task_b_id, app=celery_app)
+                         status_B = result_B.state
+                         result_B_data = result_B.result if status_B == 'SUCCESS' else result_B.info
+                         logger.debug(f"Task B ({task_b_id}) Status: {status_B}, Result/Info: {result_B_data}", extra=log_extra)
+
+                         if status_B == 'SUCCESS':
+                             # Task B 成功
+                             if isinstance(result_B_data, dict) and result_B_data.get("status") == "success":
+                                 final_task_status = "completed"
+                                 response_status_code = status.HTTP_200_OK
+                                 transcribed_text = result_B_data.get("text") # 直接获取 text
+                                 transcription_points = result_B_data.get("points_consumed", 0)
+                                 points_consumed = base_points + transcription_points
+                                 # 合并结果
+                                 final_combined_data = {**basic_info, "content": transcribed_text}
+                                 try:
+                                     # 转换并验证
+                                     final_combined_data = MediaService.convert_to_standard_format(final_combined_data)
+                                     response_data = MediaContentResponse(**final_combined_data)
+                                     response_message = result_B_data.get("message", "提取和转写成功完成")
+                                     request_ctx.set_consumed_points(points_consumed)
+                                     # await deduct_points(...)
+                                 except Exception as parse_err:
+                                     logger.error(f"合并或解析 Task B ({task_b_id}) 成功结果失败: {parse_err}", exc_info=True, extra=log_extra)
+                                     final_task_status = "failed"
+                                     response_error_msg = f"任务成功但结果合并或解析失败: {parse_err}"
+                                     response_message = response_error_msg
+                             else:
+                                 # Task B 状态 SUCCESS 但结果字典内部状态不对
+                                 logger.error(f"Task B ({task_b_id}) SUCCESS 但结果内容异常: {result_B_data}", extra=log_extra)
+                                 final_task_status = "failed"
+                                 response_error_msg = "转写任务结果内容异常"
+                                 response_message = response_error_msg
+                                 points_consumed = base_points # 只计算基础分
+                                 try: # 尝试返回基础信息
+                                     response_data = MediaContentResponse(**basic_info) if basic_info else None
+                                 except: pass
+
+                         elif status_B == 'FAILURE':
+                             # Task B 失败
+                             final_task_status = "failed"
+                             response_status_code = status.HTTP_200_OK # 查询成功，但任务失败
+                             points_consumed = base_points
+                             if isinstance(result_B_data, dict): # 错误信息在 meta (info)
+                                 response_error_msg = result_B_data.get("error", "转写任务失败")
+                             else:
+                                 response_error_msg = str(result_B_data or "转写任务失败")
+                             response_message = response_error_msg
+                             logger.error(f"Task B ({task_b_id}) 失败: {response_error_msg}", extra=log_extra)
+                             try: # 尝试返回基础信息
+                                 response_data = MediaContentResponse(**basic_info) if basic_info else None
+                             except: pass
+                         else:
+                             # Task B 仍在运行 PENDING/STARTED/RETRY
+                             # 保持 transcribing / 202 状态
+                             pass
+                     else:
+                         # Task A 返回 processing 但缺少 task_b_id 或 basic_info
+                         logger.error(f"Task A ({task_id}) 返回 processing 但关键信息丢失!", extra=log_extra)
+                         final_task_status = "failed"
+                         response_error_msg = "内部错误：任务状态协调失败"
+                         response_message = response_error_msg
+
+                 elif task_A_internal_status == 'failed':
+                      # Task A 返回的字典表明准备阶段就失败了
+                      final_task_status = "failed"
+                      response_error_msg = result_A_data.get("error", "任务准备阶段失败")
+                      points_consumed = result_A_data.get("points_consumed", 0)
+                      response_message = response_error_msg
+                      logger.error(f"Task A ({task_id}) 内部逻辑标记失败: {response_error_msg}", extra=log_extra)
+                 else:
+                      # Task A 返回字典，但内部 status 未知
+                      final_task_status = "failed"
+                      response_error_msg = f"任务结果内部状态未知: {task_A_internal_status}"
+                      response_message = response_error_msg
+                      logger.error(f"Task A ({task_id}) SUCCESS 但结果内部状态未知: {task_A_internal_status}", extra=log_extra)
+
+        else: # 其他未知或不应出现的 Celery 状态 (如 REVOKED)
+            final_task_status = status_A # 直接使用 Celery 状态
+            response_error_msg = f"任务处于非预期状态: {status_A}"
+            response_message = response_error_msg
+            logger.warning(f"Task A ({task_id}) 处于非预期状态: {status_A}", extra=log_extra)
+
+    except Exception as e:
+        # 捕获查询过程中的任何其他异常
+        logger.error(f"查询任务 {task_id} 状态时发生不可预知错误: {e}", exc_info=True, extra=log_extra)
+        final_task_status = "failed"
+        # 使用 traceback 记录更详细的错误用于调试
+        response_error_msg = f"查询任务状态时发生内部错误: {e}\n{traceback.format_exc()}"
+        response_message = f"查询任务状态时发生内部错误 ({trace_key})"
+        # 强制返回 500 错误给客户端，而不是 200 OK
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=response_message
+        )
+
+    # 4. 构建最终响应模型
+    final_response_obj = MediaExtractStatusResponse(
+        code=200 if final_task_status == "completed" else (202 if final_task_status in ["running", "transcribing"] else 500), # 映射业务状态码
         message=response_message,
         task_id=task_id,
-        status=current_status,
-        result=task_result_data, # 成功时才有数据
-        data=task_result_data,
-        error=error_message if current_status == "failed" else None, # 失败时才有错误
+        status=final_task_status, # 使用处理后的最终状态字符串
+        data=response_data, # 成功时的数据
+        error=response_error_msg if final_task_status == "failed" else None, # 失败时的错误信息
         request_context=request_context
     )
 
-    # 对于仍在运行的状态，可以考虑返回 200 OK，让客户端继续轮询
-    # 对于最终状态 (completed/failed)，也返回 200 OK
-    return final_response
+    logger.debug(f"查询任务状态 (V4) 完成,final check final_response_obj is : {final_response_obj}", extra=log_extra)
 
-
+    # 5. 返回响应
+    if response_status_code == status.HTTP_202_ACCEPTED:
+         # 对于处理中的状态，确保不返回 data 和 error
+         final_response_obj.data = None
+         final_response_obj.error = None
+         return Response(
+             content=final_response_obj.model_dump_json(exclude_none=True),
+             status_code=status.HTTP_202_ACCEPTED,
+             media_type="application/json"
+         )
+    else: # 200 OK (任务完成，无论成功或失败)
+         return final_response_obj # FastAPI 会处理序列化
 
 
 

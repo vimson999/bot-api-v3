@@ -1,24 +1,31 @@
 # bot_api_v1/app/tasks/celery_tasks.py
 import time
 from bot_api_v1.app.core.logger import logger
-import asyncio # 用于 run_async_in_sync (如果 celery_service_logic 需要)
+import asyncio
+from celery.exceptions import Retry, MaxRetriesExceededError
+from celery.result import AsyncResult # 保留导入，虽然在此文件中可能不用了
 
 # 导入 celery_app 实例
 try:
     from .celery_app import celery_app
 except ImportError:
-    logger.error("无法导入 celery_app，请检查 celery_tasks.py 相对于 celery_app.py 的路径和你的 Python Path 设置。")
+    logger.error("无法导入 celery_app...", exc_info=True)
     raise
 
-# 导入新的同步业务逻辑函数
+# !! 导入重构后的服务逻辑函数 !!
 try:
-    from .celery_service_logic import execute_media_extraction_sync
+    from bot_api_v1.app.tasks.celery_service_logic import (
+        fetch_basic_media_info,
+        prepare_media_for_transcription,
+    )
+    from bot_api_v1.app.services.business.script_service import ScriptService, AudioTranscriptionError
 except ImportError:
-     logger.error("无法导入 celery_service_logic，请检查路径。")
-     # 定义一个假的函数，以便至少能加载
-     def execute_media_extraction_sync(*args, **kwargs):
-         logger.error("execute_media_extraction_sync 未正确导入!")
-         return {"status": "failed", "error": "Celery 服务逻辑未加载", "points_consumed": 0}
+     logger.error("无法导入重构后的 celery_service_logic 函数", exc_info=True)
+     # 定义假的函数以便加载
+     def fetch_basic_media_info(*args, **kwargs): return {"status":"failed", "error":"Logic not loaded"}
+     def prepare_media_for_transcription(*args, **kwargs): return {"status":"failed", "error":"Logic not loaded"}
+     class ScriptService:
+         def transcribe_audio_sync(self, *args, **kwargs): return {"status":"failed", "error":"Service not loaded"}
 
 
 # --- 保留之前的示例任务 (可选) ---
@@ -42,15 +49,20 @@ def print_message(message):
     processed_msg = f"消息 '{message}' 已处理。"
     return processed_msg
 
-# --- 新的媒体提取任务 ---
+
+
+
+
+
+# --- 修改后的媒体提取任务 (Task A) ---
 @celery_app.task(
-    name="tasks.run_media_extraction_new", # 新任务名
+    name="tasks.run_media_extraction_new", # Task A
     bind=True,
     max_retries=1,
-    default_retry_delay=60, # 1分钟后重试
-    acks_late=True, # 对于长任务，建议开启，任务执行后才确认消息
-    time_limit=1800, # 示例：硬超时 30 分钟
-    soft_time_limit=1740 # 示例：软超时 29 分钟
+    default_retry_delay=60,
+    acks_late=True,
+    time_limit=300,
+    soft_time_limit=240
 )
 def run_media_extraction_new(self,
                              url: str,
@@ -62,45 +74,137 @@ def run_media_extraction_new(self,
                              app_id: str
                             ):
     """
-    Celery Task 包装器：调用新的同步媒体提取和转写逻辑。
+    Celery Task (Task A): V3 - 返回包含状态的字典。
+    如果 extract_text=False 或无需转写，返回 {'status':'success', ...}。
+    如果 extract_text=True 且需转写，触发 Task B，然后返回
+    {'status':'processing', 'transcription_task_id': ..., 'basic_info': ...}。
     """
     task_id = self.request.id
-    # 如果 API 端没传递 trace_id，可以用 Celery 的 task_id 代替
     effective_trace_id = trace_id or task_id
-    log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id}
-    logger.info(f"[Celery Task {task_id=}] 接收到任务, 调用同步逻辑. trace_id={effective_trace_id}", extra=log_extra)
+    log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id, "task_stage": "A"}
+    logger.info(f"[Task A {task_id=}] V3 接收到任务, extract_text={extract_text}", extra=log_extra)
 
     try:
-        # 调用新的同步业务逻辑函数
-        result_dict = execute_media_extraction_sync(
-            url=url,
-            extract_text=extract_text,
-            include_comments=include_comments,
-            platform=platform,
-            user_id=user_id,
-            trace_id=effective_trace_id,
-            app_id=app_id
-        )
-        logger.info_to_db(f"[Celery Task {task_id=}] 同步逻辑执行完成. Result status: {result_dict.get('status')}", extra=log_extra)
-        # 直接返回业务逻辑函数的字典结果
-        return result_dict
+        if not extract_text:
+            # --- 情况 1: 只需基础信息 ---
+            logger.info(f"[Task A {task_id=}] V3 只提取基础信息", extra=log_extra)
+            result_dict = fetch_basic_media_info(platform, url, include_comments, user_id, trace_id, app_id)
+            return result_dict # 返回 {'status': 'success', 'data': ...} 或失败字典
+        else:
+            # --- 情况 2: 需要提取文本 ---
+            logger.info(f"[Task A {task_id=}] V3 需要提取文本，开始准备阶段...", extra=log_extra)
+            prepare_result = prepare_media_for_transcription(platform, url,include_comments, user_id, trace_id, app_id)
 
+            if prepare_result.get("status") != "success":
+                 logger.error(f"[Task A {task_id=}] V3 准备阶段失败: {prepare_result.get('error')}", extra=log_extra)
+                 # 准备失败，直接返回失败字典，Task A 状态为 SUCCESS
+                 return prepare_result
+
+            prepare_data = prepare_result.get("data", {})
+            basic_info = prepare_data.get("basic_info")
+            audio_path = prepare_data.get("audio_path")
+            base_points = prepare_result.get("points_consumed", 0)
+
+            if not audio_path: # 无需转写
+                logger.info(f"[Task A {task_id=}] V3 媒体无需转写", extra=log_extra)
+                return {
+                    "status": "success", # 直接成功
+                    "data": basic_info,
+                    "points_consumed": base_points,
+                    "message": prepare_result.get("message", "提取成功，无需转写")
+                }
+
+            if not basic_info:
+                 logger.error(f"[Task A {task_id=}] V3 准备阶段成功但 basic_info 丢失", extra=log_extra)
+                 return {"status": "failed", "error": "内部错误：准备阶段基础信息丢失", "points_consumed": 0}
+
+            logger.info(f"[Task A {task_id=}] V3 准备阶段成功. 准备触发转写任务 (Task B)...", extra=log_extra)
+
+            # 触发转写任务 (Task B)
+            task_b_async_result = run_transcription_task.apply_async(
+                args=(audio_path, user_id, effective_trace_id, app_id),
+                queue='transcription'
+            )
+            task_b_id = task_b_async_result.id
+            logger.info(f"[Task A {task_id=}] V3 转写任务 ({task_b_id}) 已触发。", extra=log_extra)
+
+            # !! 关键修改：返回包含处理中状态和信息的字典 !!
+            processing_dict = {
+                'status': 'processing', # 内部状态标记，告知 API 需查询 Task B
+                'message': 'Awaiting transcription result',
+                'transcription_task_id': task_b_id, # 存储 Task B 的 ID
+                'basic_info': basic_info,         # 存储基础信息
+                'base_points': base_points        # 存储基础积分
+            }
+            logger.info(f"[Task A {task_id=}] V3 返回 processing 字典。Task A 结束。", extra=log_extra)
+            return processing_dict # Task A 状态为 SUCCESS, result 为此字典
+
+    # ... (异常处理部分) ...
     except Exception as e:
-        # 捕获同步逻辑函数本身可能抛出的、未在内部处理的异常
-        logger.error(f"[Celery Task {task_id=}] 调用同步逻辑时发生顶层错误: {e}", exc_info=True, extra=log_extra)
+        # ... 处理异常，最终应该 return 一个失败字典 ...
+        logger.error(f"[Task A {task_id=}] V3 执行时发生顶层错误: {e}", exc_info=True, extra=log_extra)
+        # 注意：如果这里抛出未捕获的异常，Task A 状态会是 FAILURE
+        # 但如果捕获了并返回字典，状态是 SUCCESS，需要在字典中标明失败
+        return {"status": "failed", "error": f"Task A 意外失败: {str(e)}", "points_consumed": 0}
+
+
+# --- 修改后的转写任务 (Task B) ---
+@celery_app.task(
+    name="tasks.run_transcription", # Task B
+    bind=True,
+    max_retries=1,
+    default_retry_delay=60,
+    acks_late=True,
+    time_limit=300,
+    soft_time_limit=240
+)
+def run_transcription_task(self,
+                           # 不再需要 original_task_id, basic_info, base_points
+                           audio_path: str,
+                           user_id: str,
+                           trace_id: str,
+                           app_id: str
+                           ):
+    """
+    Celery Task (Task B): 负责执行音频转写，并将转写结果作为自己的返回值。
+    """
+    task_id = self.request.id # Task B 自己的 ID
+    effective_trace_id = trace_id
+    log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id, "task_stage": "B"}
+    logger.info(f"[Task B {task_id=}] 开始执行转写, audio_path={audio_path}", extra=log_extra)
+
+    script_service = ScriptService()
+    transcription_result_dict = {} # 用于存储最终结果
+
+    try:
+        # 1. 执行转写
+        transcription_result_dict = script_service.transcribe_audio_sync(
+            audio_path=audio_path,
+            trace_id=effective_trace_id
+        )
+
+        # 2. 处理转写结果
+        if transcription_result_dict.get("status") == "success":
+            logger.info(f"[Task B {task_id=}] 转写成功", extra=log_extra)
+            # Task B 成功完成，直接返回包含转写结果的字典
+            # Celery 会将此字典存入 Task B 的 result 字段，并将 Task B 状态设为 SUCCESS
+            return transcription_result_dict
+        else:
+            error_message = transcription_result_dict.get("error", "转写失败，未知原因")
+            logger.error(f"[Task B {task_id=}] 转写失败: {error_message}", extra=log_extra)
+            # Task B 失败，更新自身状态为 FAILURE，并将错误信息存入 meta
+            self.update_state(state='FAILURE', meta=transcription_result_dict)
+            # 返回 None 或 错误字典 都可以，状态优先
+            return None
+
+    # ... (异常处理：捕获转写中的错误) ...
+    except Exception as e:
+        error_dict = {"status": "failed", "error": f"转写时发生意外错误: {str(e)}", "points_consumed": 0}
+        logger.error(f"[Task B {task_id=}] 转写时发生顶层错误: {e}", exc_info=True, extra=log_extra)
         try:
-            # 尝试重试
-            countdown = int(self.default_retry_delay * (2 ** self.request.retries))
-            logger.info(f"[Celery Task {task_id=}] 发生顶层错误，将在 {countdown} 秒后重试 (第 {self.request.retries + 1} 次)", extra=log_extra)
-            # 注意: retry 会抛出异常来中断当前执行并重新排队
-            self.retry(exc=e, countdown=countdown)
-            # retry 抛出异常后，下面的代码不会执行，所以不需要显式 return
-        except self.MaxRetriesExceededError:
-             logger.error(f"[Celery Task {task_id=}] 重试次数耗尽，顶层错误导致最终失败", extra=log_extra)
-             # 返回最终失败信息
-             return {"status": "failed", "error": f"处理失败，重试次数耗尽 ({effective_trace_id})", "exception": str(e), "points_consumed": 0}
-        except Exception as retry_exc:
-             # 处理 retry 本身的异常 (例如连接 Broker 失败)
-             logger.error(f"[Celery Task {task_id=}] 尝试重试顶层错误时失败: {retry_exc}", exc_info=True, extra=log_extra)
-             # 这种情况下任务也算失败了
-             return {"status": "failed", "error": f"处理失败且无法重试 ({effective_trace_id})", "exception": str(e), "points_consumed": 0}
+            self.retry(exc=e)
+        except MaxRetriesExceededError:
+            self.update_state(state='FAILURE', meta=error_dict) # 最终失败
+        except Exception: # 重试本身失败
+             self.update_state(state='FAILURE', meta=error_dict)
+        return None # 返回 None
