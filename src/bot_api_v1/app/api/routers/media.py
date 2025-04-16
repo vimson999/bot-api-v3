@@ -128,7 +128,7 @@ async def extract_media_content_smart(
     trace_key = request_ctx.get_trace_key()
     app_id = request_ctx.get_app_id()
     source = request_ctx.get_source()
-    user_id = request_ctx.get_user_id()
+    user_id = request_ctx.get_cappa_user_id()
     user_name = request_ctx.get_user_name()
     ip_address = request.client.host if request.client else "unknown_ip"
 
@@ -224,6 +224,13 @@ async def extract_media_content_smart(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"提交任务时发生未知错误 ({trace_key})")
 
 
+async def task_A_running():
+    final_task_status = "running"
+    response_status_code = status.HTTP_202_ACCEPTED
+    response_message = "任务正在处理中..."
+
+    return final_task_status, response_status_code, response_message
+
 @router.get(
     "/extract/status/{task_id}",
     response_model=MediaExtractStatusResponse,
@@ -248,7 +255,7 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
         trace_key = request_ctx.get_trace_key()
         app_id = request_ctx.get_app_id()
         source = request_ctx.get_source()
-        user_id = request_ctx.get_user_id()
+        user_id = request_ctx.get_cappa_user_id()
         user_name = request_ctx.get_user_name()
         ip_address = request.client.host if request.client else "unknown_ip"
         log_extra = {"request_id": trace_key, "celery_task_id": task_id, "user_id": user_id}
@@ -284,6 +291,7 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
 
         # 3. 处理 Task A 状态
         if status_A in ('PENDING', 'STARTED', 'RETRY'):
+            # final_task_status,response_status_code ,response_message = task_A_running()
             final_task_status = "running"
             response_status_code = status.HTTP_202_ACCEPTED
             response_message = "任务正在处理中..."
@@ -318,9 +326,11 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
                      response_message = result_A_data.get("message", "任务成功完成")
                      try:
                          # 转换并验证 Pydantic 模型
-                         if media_data_dict:
-                             media_data_dict = MediaService.convert_to_standard_format(media_data_dict)
-                             response_data = MediaContentResponse(**media_data_dict)
+                        #  if media_data_dict:
+                        #      media_data_dict = MediaService.convert_to_standard_format(media_data_dict)
+                        #      response_data = MediaContentResponse(**media_data_dict)
+
+                         response_data = media_data_dict
                          request_ctx.set_consumed_points(points_consumed) # 设置积分
                          # await deduct_points(...)
                      except Exception as parse_err:
@@ -336,10 +346,10 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
                      response_message = "正在进行语音转写..."
 
                      task_b_id = result_A_data.get('transcription_task_id')
-                     basic_info = result_A_data.get('basic_info')
-                     base_points = result_A_data.get('base_points', 0)
+                    #  basic_info = result_A_data.get('basic_info')
+                     base_points = result_A_data.get('base_points', 10)
 
-                     if task_b_id and isinstance(basic_info, dict):
+                     if task_b_id :
                          # 查询 Task B
                          result_B = AsyncResult(task_b_id, app=celery_app)
                          status_B = result_B.state
@@ -351,15 +361,11 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
                              if isinstance(result_B_data, dict) and result_B_data.get("status") == "success":
                                  final_task_status = "completed"
                                  response_status_code = status.HTTP_200_OK
-                                 transcribed_text = result_B_data.get("text") # 直接获取 text
-                                 transcription_points = result_B_data.get("points_consumed", 0)
-                                 points_consumed = base_points + transcription_points
-                                 # 合并结果
-                                 final_combined_data = {**basic_info, "content": transcribed_text}
+
+                                 final_combined_data = result_B_data.get("data")
+                                 points_consumed = result_B_data.get("points_consumed", 0)
                                  try:
-                                     # 转换并验证
-                                     final_combined_data = MediaService.convert_to_standard_format(final_combined_data)
-                                     response_data = MediaContentResponse(**final_combined_data)
+                                     response_data = MediaContentResponse(**final_combined_data) if final_combined_data else None
                                      response_message = result_B_data.get("message", "提取和转写成功完成")
                                      request_ctx.set_consumed_points(points_consumed)
                                      # await deduct_points(...)

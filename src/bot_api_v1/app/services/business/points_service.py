@@ -10,11 +10,12 @@ import time
 import asyncio
 from enum import Enum
 
-from sqlalchemy import select, update, and_, desc, func, text
+from sqlalchemy import select, update, and_, desc, func, text,create_engine
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, OperationalError
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload,Session
 
+from bot_api_v1.app.db.session import get_sync_db_session
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.utils.decorators.log_service_call import log_service_call
@@ -130,6 +131,48 @@ class PointsService:
         """初始化积分服务"""
         self.user_service = UserService()  # 添加用户服务实例
     
+
+    def get_user_points_sync(self, user_id: str) -> int:
+        """
+        同步获取用户积分信息
+        
+        Args:
+            user_id: 用户ID
+            
+        Returns:
+            int: 用户可用积分数量，如果用户不存在或积分账户不存在则返回0
+        """
+        try:
+            # 获取同步数据库会话
+            session = get_sync_db_session()
+            try:
+                # 查询用户积分账户
+                stmt = select(MetaUserPoints).where(
+                    and_(
+                        MetaUserPoints.user_id == user_id,
+                        MetaUserPoints.status == 1
+                    )
+                )
+                result = session.execute(stmt)
+                points_account = result.scalar_one_or_none()
+                
+                # 如果用户没有积分账户，返回0
+                if not points_account:
+                    logger.info(f"用户积分账户不存在: {user_id}")
+                    return 0
+                
+                return points_account.available_points
+            finally:
+                session.close()
+                
+        except ValueError as e:
+            # UUID格式错误
+            logger.error(f"无效的用户ID格式: {str(e)}")
+            return 0
+            
+        except Exception as e:
+            logger.error(f"同步获取用户积分信息失败: {str(e)}", exc_info=True)
+            return 0
     @gate_keeper()
     @log_service_call(method_type="points", tollgate="30-2")
     async def get_user_points(self, openid: str, db: AsyncSession) -> Dict[str, Any]:

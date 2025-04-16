@@ -13,11 +13,16 @@ import asyncio
 import threading # 确保导入 threading
 import gc # 导入 gc
 
+import requests # 使用同步库 requests
+import shutil # 用于清理目录
+import re
+
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 import torch
 import whisper
 import yt_dlp
 from pydub import AudioSegment
+from bot_api_v1.app.core.config import settings # 假设你有配置文件
 
 # 假设这些导入路径是正确的
 from bot_api_v1.app.core.cache import cache_result
@@ -614,15 +619,162 @@ class ScriptService:
 
 
 
+    BASE_TEMP_DIR = getattr(settings, 'SHARED_TEMP_DIR', '/tmp/shared_media_temp')
+    def _cleanup_dir_sync(self,directory: str, trace_id: Optional[str] = None):
+        """同步清理目录"""
+        log_extra = {"request_id": trace_id or "cleanup"}
+        if os.path.exists(directory):
+            try:
+                shutil.rmtree(directory)
+                logger.debug(f"成功清理临时目录: {directory}", extra=log_extra)
+            except Exception as e:
+                logger.error(f"清理临时目录失败: {directory}, Error: {e}", exc_info=True, extra=log_extra)
+
+    def _safe_remove_file_sync(self,file_path: str, trace_id: Optional[str] = None):
+        """同步安全删除文件"""
+        log_extra = {"request_id": trace_id or "cleanup"}
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.debug(f"成功删除文件: {file_path}", extra=log_extra)
+            except Exception as e:
+                logger.error(f"删除文件失败: {file_path}, Error: {e}", extra=log_extra)
 
 
+    def download_media_sync(
+        self, # 添加 self 参数
+        url: str,
+        trace_id: str, # 直接传递 trace_id
+        # user_id: str, # 如果日志或其他逻辑需要，也传递进来
+        # app_id: str,
+        download_base_dir: str = BASE_TEMP_DIR # 使用共享的基础临时目录
+    ) -> str: # 返回下载后的文件绝对路径
+        """
+        [同步执行] 从 URL 下载媒体文件 (视频/音频) 到共享临时目录。
+        供 Celery Task A 调用。
+        """
+        log_extra = {"request_id": trace_id} # , "user_id": user_id, "app_id": app_id
+        logger.info(f"[Sync Download] 开始下载媒体: {url}", extra=log_extra)
 
+        # 1. 创建唯一的临时下载目录
+        # 使用时间戳和 trace_id 的一部分确保唯一性
+        download_dir = os.path.join(download_base_dir, f"media_{int(time.time())}_{trace_id[-8:]}")
+        try:
+            os.makedirs(download_dir, exist_ok=True)
+        except OSError as e:
+            logger.error(f"创建临时目录失败: {download_dir}, Error: {e}", exc_info=True, extra=log_extra)
+            raise AudioDownloadError(f"无法创建下载目录: {e}") from e
 
+        # 2. 初步确定文件名和路径
+        try:
+            parsed_url = urlparse(url)
+            file_name = os.path.basename(parsed_url.path) if parsed_url.path else ''
+        except Exception:
+            file_name = ''
 
+        if not file_name or '.' not in file_name:
+            # 如果无法从 URL 获取有效文件名，生成一个默认名（后缀可能不准，后面尝试修正）
+            file_name = f"media_{int(time.time())}.tmp"
+        downloaded_path = os.path.join(download_dir, file_name)
+        logger.debug(f"初步下载路径: {downloaded_path}", extra=log_extra)
 
+        # 3. 执行下载 (使用 requests)
+        try:
+            headers = { # 使用通用或针对性的 Headers
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36',
+                'Accept': '*/*', # 更通用的 Accept
+                'Accept-Language': 'en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7',
+                'Referer': url, # 有些网站会检查 Referer
+                # 'Cookie': 'YOUR_COOKIES_IF_NEEDED' # 如果需要 Cookie
+            }
+            # 使用 stream=True 进行流式下载，适合大文件
+            response = requests.get(url, headers=headers, stream=True, allow_redirects=True, timeout=120.0) # 增加超时时间
 
+            # 尝试从 Content-Disposition 获取更准确的文件名
+            content_disposition = response.headers.get('Content-Disposition')
+            if content_disposition:
+                fname_match = re.search(r'filename\*?=(?:UTF-8\'\')?([^;]+)', content_disposition, re.IGNORECASE)
+                if fname_match:
+                    potential_name = unquote(fname_match.group(1).strip('" '))
+                    if '.' in potential_name: # 确保有后缀
+                        new_file_name = os.path.basename(potential_name)
+                        new_downloaded_path = os.path.join(download_dir, new_file_name)
+                        if new_downloaded_path != downloaded_path:
+                            logger.info(f"从 Content-Disposition 更新文件名为: {new_file_name}", extra=log_extra)
+                            file_name = new_file_name
+                            downloaded_path = new_downloaded_path # 更新最终路径
 
+            # 检查 HTTP 状态码
+            response.raise_for_status() # 如果状态码不是 2xx，会抛出 HTTPError
 
+            # 检查 Content-Type (可选)
+            content_type = response.headers.get('Content-Type', '').lower()
+            if not content_type.startswith(('audio/', 'video/', 'application/octet-stream', 'binary/octet-stream')):
+                logger.warning(f"下载的内容类型可能非预期: {content_type} from {url}", extra=log_extra)
+                # 这里可以选择继续下载或报错，取决于你的策略
+                # if not allow_unexpected_content_type:
+                #     raise AudioDownloadError(f"非预期的内容类型: {content_type}")
+
+            # 4. 流式写入文件
+            bytes_downloaded = 0
+            try:
+                with open(downloaded_path, 'wb') as f:
+                    # iter_content 的 chunk_size 可以调整
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk: # filter out keep-alive new chunks
+                            f.write(chunk)
+                            bytes_downloaded += len(chunk)
+                logger.debug(f"文件写入完成，总大小: {bytes_downloaded} bytes.", extra=log_extra)
+            except IOError as write_e:
+                logger.error(f"写入文件时发生 IO 错误: {write_e}", exc_info=True, extra=log_extra)
+                raise AudioDownloadError(f"写入文件时出错: {write_e}") from write_e
+
+            # 5. 下载后检查
+            if not os.path.exists(downloaded_path):
+                # 有时文件名在写入后可能改变（虽然上面尝试修正了），再次检查目录
+                possible_files = [os.path.join(download_dir, f) for f in os.listdir(download_dir)]
+                if len(possible_files) == 1:
+                    logger.warning(f"原始路径 {downloaded_path} 未找到，但发现唯一文件 {possible_files[0]}", extra=log_extra)
+                    downloaded_path = possible_files[0]
+                else:
+                    raise AudioDownloadError(f"下载后文件未找到: {downloaded_path}")
+
+            if bytes_downloaded == 0 and response.status_code == 200:
+                logger.error(f"下载成功但文件大小为 0: {downloaded_path}", extra=log_extra)
+                _safe_remove_file_sync(downloaded_path, trace_id) # 删除空文件
+                raise AudioDownloadError(f"下载的文件为空: {url}")
+
+            # 6. 成功返回路径
+            logger.info(f"媒体文件下载成功: {downloaded_path}", extra=log_extra)
+            # 注意：这里只返回路径，Task A 需要将此路径传递给 Task B
+            # Task B 需要能访问这个路径
+            return downloaded_path
+
+        # --- 统一异常处理 ---
+        except requests.exceptions.HTTPError as e:
+            error_msg = f"下载失败 (HTTP Status {e.response.status_code})"
+            logger.error(f"{error_msg} from {url}", extra=log_extra)
+            _cleanup_dir_sync(download_dir, trace_id) # 清理目录
+            raise AudioDownloadError(error_msg) from e
+        except requests.exceptions.RequestException as e:
+            error_msg = f"下载失败 (Request Error): {type(e).__name__}"
+            logger.error(f"{error_msg} from {url}", extra=log_extra)
+            _cleanup_dir_sync(download_dir, trace_id) # 清理目录
+            raise AudioDownloadError(error_msg) from e
+        except AudioDownloadError as e: # 捕获并重新抛出内部定义的错误
+            # 可能已经在内部记录过日志，这里可以选择是否补充日志
+            _cleanup_dir_sync(download_dir, trace_id) # 确保清理
+            raise e
+        except Exception as e:
+            error_msg = f"下载过程中发生未知异常: {type(e).__name__}"
+            logger.error(f"{error_msg} from {url}", exc_info=True, extra=log_extra)
+            _cleanup_dir_sync(download_dir, trace_id) # 清理目录
+            raise AudioDownloadError(error_msg) from e
+
+        finally:
+            # 确保 response 连接被关闭 (对于 stream=True 很重要)
+            if 'response' in locals() and response:
+                response.close()
 
 
 

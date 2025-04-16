@@ -248,7 +248,7 @@ def prepare_media_for_transcription(
         
         # 根据平台选择不同的下载方法
         if platform == MediaPlatform.DOUYIN:
-            audio_path, _ = script_service.download_audio_direct(media_url_to_download, trace_id)
+            audio_path= script_service.download_media_sync(media_url_to_download,trace_id)
         else:
             # 对于其他平台使用通用下载方法
             audio_path, _ = script_service.download_audio_sync(media_url_to_download, trace_id)
