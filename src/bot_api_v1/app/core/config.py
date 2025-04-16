@@ -63,7 +63,8 @@ class Settings(BaseSettings):
     CACHE_EXPIRATION: int = int(os.getenv("CACHE_EXPIRATION", "100"))
     CACHE_REDIS_URL: str = os.getenv(
         "CACHE_REDIS_URL",
-        "redis://:login4RDS!!!@101.35.56.140:6379/2" # !! 默认值指向远程 Redis DB 2 !!
+        # "redis://:login4RDS!!!@101.35.56.140:6379/2" # !! 默认值指向远程 Redis DB 2 !!
+        "redis://localhost:6379/2"
     )
 
 

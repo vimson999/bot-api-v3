@@ -1,7 +1,6 @@
 # bot_api_v1/app/tasks/celery_tasks.py
 import time
 from bot_api_v1.app.core.logger import logger
-import asyncio
 from celery.exceptions import Retry, MaxRetriesExceededError
 from celery.result import AsyncResult # 保留导入，虽然在此文件中可能不用了
 from bot_api_v1.app.services.business.media_service import MediaService,MediaPlatform
@@ -73,6 +72,7 @@ def check_user_available_points_by_audio(
     return total_required,user_available_points
 
 
+
 # --- 修改后的媒体提取任务 (Task A) ---
 @celery_app.task(
     name="tasks.run_media_extraction_new", # Task A
@@ -101,7 +101,7 @@ def run_media_extraction_new(self,
     task_id = self.request.id
     effective_trace_id = trace_id or task_id
     log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id, "task_stage": "A"}
-    logger.info(f"[Task A {task_id=}] V3 接收到任务, extract_text={extract_text}", extra=log_extra)
+    logger.info_to_db(f"[Task A {task_id=}] V3 接收到任务, extract_text={extract_text}", extra=log_extra)
 
     try:
         logger.info(f"[Task A {task_id=}] V3 需要提取文本，开始准备阶段...", extra=log_extra)
@@ -118,7 +118,7 @@ def run_media_extraction_new(self,
         base_points = prepare_data.get("points_consumed", 0)
 
         if not audio_path: # 无需转写
-            logger.info(f"[Task A {task_id=}] V3 媒体无需转写", extra=log_extra)
+            logger.error(f"[Task A {task_id=}] V3 没有媒体audio_path is nul--无需转写", extra=log_extra)
             return {
                 "status": "success", # 直接成功
                 "data": basic_info,
@@ -139,7 +139,7 @@ def run_media_extraction_new(self,
             logger.error(msg, extra=log_extra)
             return {"status": "failed", "error": msg, "points_consumed": 0}
 
-        logger.info(f"[Task A {task_id=}] V3 准备阶段成功. 准备触发转写任务 (Task B)，需要{total_required}积分，用户积分充足{user_available_points}...", extra=log_extra)
+        logger.info_to_db(f"[Task A {task_id=}] V3 准备阶段成功. 准备触发转写任务 (Task B)，需要{total_required}积分，用户积分充足{user_available_points}...", extra=log_extra)
 
         # 触发转写任务 (Task B)
         task_b_async_result = run_transcription_task.apply_async(
@@ -147,7 +147,7 @@ def run_media_extraction_new(self,
             queue='transcription'
         )
         task_b_id = task_b_async_result.id
-        logger.info(f"[Task A {task_id=}] V3 转写任务 ({task_b_id}) 已触发。", extra=log_extra)
+        logger.info_to_db(f"[Task A {task_id=}] V3 转写任务 ({task_b_id}) 已触发。", extra=log_extra)
 
         # !! 关键修改：返回包含处理中状态和信息的字典 !!
         processing_dict = {
@@ -157,7 +157,7 @@ def run_media_extraction_new(self,
             'basic_info': basic_info,         # 存储基础信息
             'base_points': base_points        # 存储基础积分
         }
-        logger.info(f"[Task A {task_id=}] V3 返回 processing 字典。Task A 结束。", extra=log_extra)
+        logger.info_to_db(f"[Task A {task_id=}] V3 返回 processing 字典。Task A 结束。", extra=log_extra)
         return processing_dict # Task A 状态为 SUCCESS, result 为此字典
         
     except Exception as e:

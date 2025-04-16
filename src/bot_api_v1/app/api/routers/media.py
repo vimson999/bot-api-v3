@@ -138,8 +138,8 @@ async def extract_media_content_smart(
     )
     log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id}
 
-    logger.info(
-        f"接收媒体提取请求(Smart): url={extract_request.url}, extract_text={extract_request.extract_text}",
+    logger.info_to_db(
+        f"接收媒体提取请求(Smart) begin: url={extract_request.url}, extract_text={extract_request.extract_text}",
         extra=log_extra
     )
 
@@ -150,7 +150,7 @@ async def extract_media_content_smart(
     # --- 根据 extract_text 决定流程 ---
     if not extract_request.extract_text:
         # --- 旧通道：同步执行 ---
-        logger.info("执行同步提取 (extract_text=False)", extra=log_extra)
+        logger.debug("不抓文案只抓基本信息,执行同步提取 (extract_text=False)", extra=log_extra)
         try:
             # 调用现有的 MediaService 方法 (假设它在 extract_text=False 时足够快)
             media_content = await media_service.extract_media_content(
@@ -165,6 +165,8 @@ async def extract_media_content_smart(
                 data=MediaContentResponse(**media_content) if media_content else None,
                 request_context=request_context
             )
+            
+            logger.debug("不抓文案只抓基本信息,执行同步提取 (extract_text=False)结束,response_data is {response_data}", extra=log_extra)
             # 返回标准的 200 OK 响应
             return response_data
 
@@ -454,7 +456,7 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
         request_context=request_context
     )
 
-    logger.debug(f"查询任务状态 (V4) 完成,final check final_response_obj is : {final_response_obj}", extra=log_extra)
+    logger.info_to_db(f"查询任务状态 (V4) 完成,final check final_response_obj is : {final_response_obj}", extra=log_extra)
 
     # 5. 返回响应
     if response_status_code == status.HTTP_202_ACCEPTED:
