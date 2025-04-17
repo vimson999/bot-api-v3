@@ -321,26 +321,19 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
                  task_A_internal_status = result_A_data.get('status')
 
                  if task_A_internal_status == 'success':
-                     # Task A 直接成功完成 (例如 extract_text=False)
                      final_task_status = "completed"
-                     media_data_dict = result_A_data.get("data")
+                     final_combined_data = result_A_data.get("data")
                      points_consumed = result_A_data.get("points_consumed", 0)
-                     response_message = result_A_data.get("message", "任务成功完成")
                      try:
-                         # 转换并验证 Pydantic 模型
-                        #  if media_data_dict:
-                        #      media_data_dict = MediaService.convert_to_standard_format(media_data_dict)
-                        #      response_data = MediaContentResponse(**media_data_dict)
-
-                         response_data = media_data_dict
-                         request_ctx.set_consumed_points(points_consumed) # 设置积分
-                         # await deduct_points(...)
+                        response_data = MediaContentResponse(**final_combined_data) if final_combined_data else None
+                        response_message = result_A_data.get("message", "提取和转写成功完成")
+                        request_ctx.set_consumed_points(points_consumed)
+                        response_status_code = status.HTTP_200_OK
                      except Exception as parse_err:
-                         logger.error(f"解析 Task A ({task_id}) 直接成功结果失败: {parse_err}", exc_info=True, extra=log_extra)
-                         final_task_status = "failed"
-                         response_error_msg = f"任务成功但结果解析失败: {parse_err}"
-                         response_message = response_error_msg
-
+                        logger.error(f"从Task A ({task_id}) 成功结果直接拉取时，失败: {parse_err}", exc_info=True, extra=log_extra)
+                        final_task_status = "failed"
+                        response_error_msg = f"task A任务成功,但结果拉取时解析失败: {parse_err}"
+                        response_message = response_error_msg
                  elif task_A_internal_status == 'processing':
                      # Task A 成功触发 Task B，需要查询 Task B
                      final_task_status = "transcribing" # 初始为转写中
@@ -348,7 +341,6 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
                      response_message = "正在进行语音转写..."
 
                      task_b_id = result_A_data.get('transcription_task_id')
-                    #  basic_info = result_A_data.get('basic_info')
                      base_points = result_A_data.get('base_points', 10)
 
                      if task_b_id :

@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     DB_DROP_AND_CREATE_ALL: bool = os.getenv("DB_DROP_AND_CREATE_ALL", "false").lower() == "true"
     CREATE_TEST_DATA: bool = os.getenv("CREATE_TEST_DATA", "false").lower() == "true"
     
+
+    WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
+    SHARED_TEMP_DIR : str = os.getenv("SHARED_TEMP_DIR", "/Users/v9/Downloads/nfs")
+
+
     # 缓存设置
     REDIS_URL: Optional[str] = os.getenv("REDIS_URL") # 这个可用于通用 Redis 缓存
     CACHE_EXPIRATION: int = int(os.getenv("CACHE_EXPIRATION", "100"))

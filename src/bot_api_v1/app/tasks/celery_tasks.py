@@ -6,6 +6,8 @@ from celery.result import AsyncResult # 保留导入，虽然在此文件中可�
 from bot_api_v1.app.services.business.media_service import MediaService,MediaPlatform
 from pydub import AudioSegment
 from bot_api_v1.app.services.business.points_service import PointsService
+from bot_api_v1.app.core.cache import get_task_result_from_cache, save_task_result_to_cache
+
 
 # 导入 celery_app 实例
 try:
@@ -21,7 +23,8 @@ try:
         prepare_media_for_transcription,
     )
     from bot_api_v1.app.services.business.script_service import ScriptService, AudioTranscriptionError
-except ImportError:
+except ImportError as e:
+    #  logger.error(f"无法导入重构后的 celery_service_logic 函数, 错误信息: {e}")
      logger.error("无法导入重构后的 celery_service_logic 函数", exc_info=True)
      # 定义假的函数以便加载
      def fetch_basic_media_info(*args, **kwargs): return {"status":"failed", "error":"Logic not loaded"}
@@ -72,6 +75,10 @@ def check_user_available_points_by_audio(
     return total_required,user_available_points
 
 
+def get_task_b_result(origin_url:str): 
+    return get_task_result_from_cache(origin_url)
+
+
 
 # --- 修改后的媒体提取任务 (Task A) ---
 @celery_app.task(
@@ -104,7 +111,15 @@ def run_media_extraction_new(self,
     logger.info_to_db(f"[Task A {task_id=}] V3 接收到任务, extract_text={extract_text}", extra=log_extra)
 
     try:
-        logger.info(f"[Task A {task_id=}] V3 需要提取文本，开始准备阶段...", extra=log_extra)
+        task_b_result = get_task_b_result(url)
+        if task_b_result:
+            logger.info_to_db(f"[Task A {task_id}] 从缓存中捞到了url is {url}的Task B结果，那么直接返回", extra=log_extra)
+            return task_b_result
+    except Exception as e:
+        logger.error(f"[Task A {task_id}] 试图从缓存中捞取url is {url}的Task B结果失败了,继续执行吧，错误信息: {e}", extra=log_extra)
+
+    try:
+        logger.info(f"[Task A {task_id=}] V3，没捞到缓存，需要提取文本，开始准备阶段...", extra=log_extra)
         prepare_result = prepare_media_for_transcription(platform, url,include_comments, user_id, trace_id, app_id)
 
         if prepare_result.get("status") != "success":
@@ -115,8 +130,11 @@ def run_media_extraction_new(self,
         prepare_data = prepare_result.get("data", {})
         basic_info = prepare_data.get("basic_info")
         audio_path = prepare_data.get("audio_path")
+        media_url_to_download = prepare_data.get("media_url_to_download")
         base_points = prepare_data.get("points_consumed", 0)
+        # go_cache = prepare_data.get("go_cache", False)
 
+        # if not go_cache and not audio_path: # 无需转写
         if not audio_path: # 无需转写
             logger.error(f"[Task A {task_id=}] V3 没有媒体audio_path is nul--无需转写", extra=log_extra)
             return {
@@ -143,7 +161,7 @@ def run_media_extraction_new(self,
 
         # 触发转写任务 (Task B)
         task_b_async_result = run_transcription_task.apply_async(
-            args=(audio_path, user_id, effective_trace_id, app_id, basic_info, platform,url,audio_duration),
+            args=(audio_path, media_url_to_download , user_id, effective_trace_id, app_id, basic_info, platform,url,audio_duration),
             queue='transcription'
         )
         task_b_id = task_b_async_result.id
@@ -302,12 +320,13 @@ def create_schema(
     max_retries=1,
     default_retry_delay=60,
     acks_late=True,
-    time_limit=300,
+    time_limit=600,
     soft_time_limit=240
 )
 def run_transcription_task(self,
                            # 不再需要 original_task_id, basic_info, base_points
                            audio_path: str,
+                           media_url_to_download: str,
                            user_id: str,
                            trace_id: str,
                            app_id: str,
@@ -322,8 +341,16 @@ def run_transcription_task(self,
     task_id = self.request.id # Task B 自己的 ID
     effective_trace_id = trace_id
     log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id, "task_stage": "B"}
+        
+    try:
+        task_b_result = get_task_b_result(url)
+        if task_b_result:
+            logger.info_to_db(f"[Task B {task_id}] 从缓存中捞取url is {url}的结果返回", extra=log_extra)
+            return task_b_result
+    except Exception as e:
+        logger.error(f"[Task B] 试图从缓存中捞取url is {url}的Task B结果失败了,继续执行吧，错误信息: {e}", extra=log_extra)
+   
     logger.info(f"[Task B {task_id=}] 开始执行转写, audio_path={audio_path}", extra=log_extra)
-
     total_required,user_available_points = check_user_available_points_by_audio(audio_duration, user_id, task_id, log_extra)
     if user_available_points is None or user_available_points < total_required:
         msg = f"[Task B {task_id=}] V3 先检查积分信息，用户{user_id}积分不足，无法继续。需要{total_required}积分，用户仅有{user_available_points}积分"
@@ -337,6 +364,9 @@ def run_transcription_task(self,
         script_service = ScriptService()
         # 1. 执行转写
         transcription_result_dict = script_service.transcribe_audio_sync(
+            original_url=url,
+            media_url_to_download=media_url_to_download,
+            platform=platform,
             audio_path=audio_path,
             trace_id=effective_trace_id
         )
@@ -365,22 +395,14 @@ def run_transcription_task(self,
                     "points_consumed": total_required    # 包含从 basic_info 提取的积分
                 }
                 logger.info(f"[Task B {task_id=}] 返回包含最终格式数据的成功结果，task_b_final_result is {task_b_final_result}。", extra=log_extra)
+
+                try:
+                    save_task_result_to_cache(url,task_b_final_result)
+                    logger.info_to_db(f"[Task B {task_id=}] 成功保存结果到缓存", extra=log_extra)
+                except Exception as e:
+                    logger.error(f"[Task B {task_id=}] 保存转写结果到缓存时出错: {e}", exc_info=True, extra=log_extra)
+
                 return task_b_final_result
-
-                # logger.info(f"[Task B {task_id=}] 返回简化的测试结果...")
-                # simplified_data = {
-                #     "video_id": final_standard_data.get("video_id", "test_id_placeholder"),
-                #     "platform": final_standard_data.get("platform", "unknown")
-                #     # 只包含极少数确定安全的字段
-                # }
-                # test_result = {
-                #     "status": "success",
-                #     "message": "Simplified test return",
-                #     "data": simplified_data,
-                #     "points_consumed": total_required # points 应该是数字，是安全的
-                # }
-                # return test_result
-
             except Exception :
                  logger.error(f"[Task B {task_id=}] 格式化最终结果时出错: {format_err}", exc_info=True, extra=log_extra)
                  # 格式化失败，也算 Task B 失败
