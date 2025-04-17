@@ -103,6 +103,22 @@ class RequestContext:
         """获取完整检查点标识"""
         return f'{_request_ctx_var.get().get("base_tollgate", "-")}-{_request_ctx_var.get().get("current_tollgate", "-")}'
     
+
+
+
+    @staticmethod
+    def get_cappa_user_id() -> str:
+        """获取当前检查点"""
+        return _request_ctx_var.get().get("cappa_user_id", "-")
+
+    @staticmethod
+    def set_cappa_user_id(cappa_user_id: str) -> None:
+        ctx = _request_ctx_var.get()
+        ctx['cappa_user_id'] = cappa_user_id
+        
+        _request_ctx_var.set(ctx)
+
+
     # 新增积分相关方法
     @staticmethod
     def set_points_info(account_id: str, available_points: int, user_id: str = None) -> None:
@@ -134,6 +150,8 @@ class RequestContext:
             ctx['api_name'] = api_name
         _request_ctx_var.set(ctx)
     
+
+
     @staticmethod
     def get_points_info() -> Dict[str, Any]:
         """获取当前请求相关的积分信息

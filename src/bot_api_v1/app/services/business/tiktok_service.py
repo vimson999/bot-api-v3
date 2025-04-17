@@ -590,6 +590,15 @@ class TikTokService:
                         f"Failed to get user info after {retries+1} attempts: {str(e)}"
                     ) from e
     
+    def get_video_info_sync_for_celery(
+        url: str, 
+        extract_text: bool,
+        user_id_for_points: str, 
+        trace_id: str,
+    ) -> dict:
+        logger.info(f"Starting to get video info for url: {url}")
+        logger.info(f"Starting to get video info for url: {url}")
+        logger.info(f"Starting to get video info for url: {url}")
 
 
 async def get_video_info(

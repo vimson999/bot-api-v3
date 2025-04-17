@@ -1,5 +1,5 @@
 import sqlalchemy
-
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.orm import sessionmaker
@@ -50,6 +50,21 @@ engine = get_engine(
     }
 )
 
+# 创建同步数据库引擎
+# 注意：需要将异步URL转换为同步URL (postgresql+asyncpg:// -> postgresql://)
+sync_db_url = str(settings.DATABASE_URL).replace('+asyncpg', '')
+sync_engine = create_engine(
+    sync_db_url,
+    echo=settings.DB_ECHO,
+    echo_pool=settings.DB_ECHO_POOL,
+    future=True,
+    pool_size=settings.DB_POOL_SIZE,
+    max_overflow=settings.DB_MAX_OVERFLOW,
+    pool_pre_ping=True,
+    connect_args={
+        "application_name": f"{settings.PROJECT_NAME}-{settings.ENVIRONMENT}-sync"
+    }
+)
 
 # 应用SQLAlchemy监控补丁
 patch_sqlalchemy_metrics()
@@ -84,6 +99,18 @@ async_session_maker = sessionmaker(
     autoflush=False
 )
 
+# 创建同步会话工厂
+sync_session_maker = sessionmaker(
+    bind=sync_engine,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False
+)
+
+def get_sync_db_session():
+    """创建同步数据库会话"""
+    return sync_session_maker()
+
 async def get_db():
     """异步数据库会话生成器"""
     async with async_session_maker() as session:
@@ -97,7 +124,19 @@ async def get_db():
         finally:
             await session.close()
 
-
+@contextlib.contextmanager
+def get_sync_db():
+    """同步数据库会话上下文管理器"""
+    session = get_sync_db_session()
+    try:
+        yield session
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.exception(f"Sync database session error: {str(e)}")
+        raise
+    finally:
+        session.close()
 
 async def check_db_connection():
     """检查数据库连接是否工作正常"""
@@ -114,4 +153,19 @@ async def check_db_connection():
             await conn.close()
     except Exception as e:
         logger.error(f"Database connection check: FAILED - {str(e)}")
+        return False
+
+def check_sync_db_connection():
+    """检查同步数据库连接是否工作正常"""
+    try:
+        conn = sync_engine.connect()
+        try:
+            result = conn.execute(sqlalchemy.text("SELECT 1"))
+            value = result.fetchone()
+            logger.info("Sync database connection check: SUCCESS")
+            return True
+        finally:
+            conn.close()
+    except Exception as e:
+        logger.error(f"Sync database connection check: FAILED - {str(e)}")
         return False

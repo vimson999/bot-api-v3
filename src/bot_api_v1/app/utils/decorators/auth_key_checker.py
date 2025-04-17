@@ -72,6 +72,8 @@ def require_auth_key(exempt: bool = False):
                         status_code=status.HTTP_401_UNAUTHORIZED,
                         detail="无效的授权密钥"
                     )
+
+                request_ctx.set_cappa_user_id(str(key_obj.user_id))
                 
                 # 步骤6：检查密钥状态
                 now = datetime.now()

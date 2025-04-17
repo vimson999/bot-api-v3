@@ -315,3 +315,157 @@ class MediaService:
             return datetime.fromtimestamp(timestamp).isoformat()
         except:
             return None
+
+    def _format_timestamp(self, timestamp: Union[int, float, None]) -> Optional[str]:
+        """格式化时间戳为ISO格式字符串"""
+        if not timestamp:
+            return None
+            
+        try:
+            # 处理秒级和毫秒级时间戳
+            if timestamp > 10000000000:  # 毫秒级
+                timestamp = timestamp / 1000
+                
+            return datetime.fromtimestamp(timestamp).isoformat()
+        except:
+            return None
+            
+    @staticmethod
+    def convert_to_standard_format(data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        将各种格式的媒体数据转换为标准格式，适用于API响应和Celery任务结果
+        
+        Args:
+            data: 原始媒体数据
+            
+        Returns:
+            Dict: 标准格式的媒体数据
+        """
+        # 判断数据来源平台
+        platform = data.get("platform", "unknown")
+        
+        # 如果数据中有note_id，可能是小红书数据
+        if "note_id" in data and platform == "unknown":
+            platform = MediaPlatform.XIAOHONGSHU
+        
+        # 如果数据中有id但没有note_id，可能是抖音数据
+        elif "id" in data and "note_id" not in data and platform == "unknown":
+            platform = MediaPlatform.DOUYIN
+        
+        if platform == MediaPlatform.XIAOHONGSHU:
+            # 小红书数据结构转换
+            result = {
+                "platform": MediaPlatform.XIAOHONGSHU,
+                "video_id": data.get("note_id", ""),
+                "original_url": data.get("original_url", ""),
+                "title": data.get("title", ""),
+                "description": data.get("desc", ""),
+                "content": data.get("content", "") or data.get("transcribed_text", ""),
+                "tags": data.get("tags", []),
+                
+                "author": {
+                    "id": data.get("author", {}).get("id", ""),
+                    "sec_uid": data.get("author", {}).get("id", ""),  # 使用id作为sec_uid
+                    "nickname": data.get("author", {}).get("nickname", ""),
+                    "avatar": data.get("author", {}).get("avatar", ""),
+                    "signature": data.get("author", {}).get("signature", ""),
+                    "verified": data.get("author", {}).get("verified", False),
+                    "follower_count": data.get("author", {}).get("follower_count", 0),
+                    "following_count": data.get("author", {}).get("following_count", 0),
+                    "region": data.get("author", {}).get("location", "")
+                },
+                
+                "statistics": {
+                    "like_count": data.get("statistics", {}).get("like_count", 0),
+                    "comment_count": data.get("statistics", {}).get("comment_count", 0),
+                    "share_count": data.get("statistics", {}).get("share_count", 0),
+                    "collect_count": data.get("statistics", {}).get("collected_count", 0),
+                    "play_count": data.get("statistics", {}).get("view_count", 0)
+                },
+                
+                "media": {
+                    "cover_url": data.get("media", {}).get("cover_url", "") or (data.get("images", [""])[0] if data.get("images") else ""),
+                    "video_url": data.get("media", {}).get("video_url", ""),
+                    "duration": data.get("media", {}).get("duration", 0),
+                    "width": data.get("media", {}).get("width", 0),
+                    "height": data.get("media", {}).get("height", 0),
+                    "quality": "normal"
+                }
+            }
+            
+            # 处理时间戳
+            create_time = data.get("create_time", 0)
+            update_time = data.get("last_update_time", 0)
+            
+            if create_time:
+                try:
+                    # 处理秒级和毫秒级时间戳
+                    if create_time > 10000000000:  # 毫秒级
+                        create_time = create_time / 1000
+                    result["publish_time"] = datetime.fromtimestamp(create_time).isoformat()
+                except:
+                    pass
+                    
+            if update_time:
+                try:
+                    # 处理秒级和毫秒级时间戳
+                    if update_time > 10000000000:  # 毫秒级
+                        update_time = update_time / 1000
+                    result["update_time"] = datetime.fromtimestamp(update_time).isoformat()
+                except:
+                    pass
+                
+        else:
+            # 抖音或其他平台数据结构
+            result = {
+                "platform": MediaPlatform.DOUYIN,
+                "video_id": data.get("id", ""),
+                "original_url": data.get("original_url", ""),
+                "title": data.get("desc", ""),
+                "description": data.get("desc", ""),
+                "content": data.get("transcribed_text", ""),
+                "tags": [],
+                
+                "author": {
+                    "id": data.get("uid", ""),
+                    "sec_uid": data.get("sec_uid", "") or data.get("uid", ""),
+                    "nickname": data.get("nickname", ""),
+                    "avatar": "",
+                    "signature": data.get("signature", ""),
+                    "verified": False,
+                    "follower_count": 0,
+                    "following_count": 0,
+                    "region": ""
+                },
+                
+                "statistics": {
+                    "like_count": data.get("digg_count", 0),
+                    "comment_count": data.get("comment_count", 0),
+                    "share_count": data.get("share_count", 0),
+                    "collect_count": data.get("collect_count", 0),
+                    "play_count": data.get("play_count", 0)
+                },
+                
+                "media": {
+                    "cover_url": data.get("origin_cover", ""),
+                    "video_url": data.get("downloads", ""),
+                    "duration": 0,
+                    "width": data.get("width", 0),
+                    "height": data.get("height", 0),
+                    "quality": "normal"
+                }
+            }
+            
+            # 处理时间戳
+            create_timestamp = data.get("create_timestamp", 0)
+            if create_timestamp:
+                try:
+                    # 处理秒级和毫秒级时间戳
+                    if create_timestamp > 10000000000:  # 毫秒级
+                        create_timestamp = create_timestamp / 1000
+                    result["publish_time"] = datetime.fromtimestamp(create_timestamp).isoformat()
+                    result["update_time"] = None
+                except:
+                    pass
+        
+        return result

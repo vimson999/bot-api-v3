@@ -5,18 +5,18 @@ from sqlalchemy import select, update, delete, and_, or_, desc, asc, func, exist
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 from sqlalchemy.exc import SQLAlchemyError
-import logging
 from fastapi.encoders import jsonable_encoder
 from bot_api_v1.app.db.base import Base
 from datetime import datetime
 import uuid
 from pydantic import BaseModel
+from bot_api_v1.app.core.logger import logger
+
 
 ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
-logger = logging.getLogger(__name__)
 
 class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     def __init__(self, model: Type[ModelType]):

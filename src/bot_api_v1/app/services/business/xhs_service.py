@@ -5,7 +5,6 @@ import asyncio
 import json
 import time
 from typing import Dict, Any, Optional, Tuple, List
-import logging
 from datetime import datetime
 
 from bot_api_v1.app.core.cache import cache_result
@@ -602,3 +601,95 @@ class XHSService:
                     "notes_count": 0
                 }
             }
+
+    # --- 新增的同步方法 (供 Celery 调用) ---
+    def get_note_info_sync_for_celery(
+        self, 
+        url: str, 
+        extract_text: bool, 
+        # --- 替代 request_ctx 的参数 ---
+        user_id_for_points: str, # 假设用于积分或日志
+        trace_id: str
+    ) -> dict:
+        """
+        [同步执行] 获取小红书笔记信息，并可选提取文本。
+        为 Celery Task 设计，不依赖 request_ctx，不写数据库。
+        """
+        log_extra = {"request_id": trace_id, "user_id": user_id_for_points}
+        logger.info(f"[Sync XHS] 开始获取笔记信息: {url}, extract_text={extract_text}", extra=log_extra)
+        
+        if not SPIDER_XHS_LOADED:
+             raise XHSError("小红书模块未加载")
+
+        points_consumed = 0 # 初始化消耗积分
+        base_cost = 10      # 基础信息成本
+        transcription_cost = 0 # 初始化转写成本
+        media_data = None
+        transcribed_text = None
+        
+        try:
+            # 1. 获取基础笔记信息 (调用同步/阻塞的 XHS API)
+            # 假设 self.xhs_apis.get_note_info 是阻塞的
+            logger.debug("[Sync XHS] 调用 xhs_apis.get_note_info...", extra=log_extra)
+            success, msg, note_data_raw = self.xhs_apis.get_note_info(url, self.cookies_str)
+            logger.debug(f"[Sync XHS] xhs_apis.get_note_info 返回: success={success}", extra=log_extra)
+            
+            if not success or not note_data_raw:
+                raise XHSError(f"获取小红书笔记API失败: {msg}")
+            
+            # 解析数据 (这部分是同步的)
+            try:
+                note_data_raw['data']['items'][0]['url'] = url # 添加原始 URL
+                note_info_parsed = handle_note_info(note_data_raw['data']['items'][0])
+                media_data = self._convert_note_to_standard_format(note_info_parsed)
+                points_consumed += base_cost # 累加基础积分
+            except (KeyError, IndexError, Exception) as e:
+                 logger.error(f"[Sync XHS] 解析笔记数据失败: {e}", exc_info=True, extra=log_extra)
+                 raise XHSError(f"解析笔记数据失败: {str(e)}")
+
+            # 2. 如果需要提取文本
+            if extract_text and media_data.get("type") == MediaType.VIDEO:
+                video_url = media_data.get("media", {}).get("video_url")
+                if video_url:
+                    logger.info(f"[Sync XHS] 开始下载和转写视频...", extra=log_extra)
+                    try:
+                        # 调用 ScriptService 新增的同步方法
+                        audio_path, _ = self.script_service.download_audio_sync(video_url, trace_id)
+                        transcribed_text,audio_duration_sec = self.script_service.transcribe_audio_sync(audio_path, trace_id)
+                        
+                        # 假设转写成功，计算积分 (需要实际逻辑)
+                        # audio_duration_sec = 120 # !! 需要从 download_audio_sync 获取或重新计算 !!
+                        duration_points = ((audio_duration_sec // 60) + (1 if audio_duration_sec % 60 > 0 else 0)) * 10
+                        transcription_cost = max(10, duration_points) # 保证最低 10 分
+                        points_consumed = transcription_cost
+
+                        logger.info(f"[Sync XHS] 视频转写成功", extra=log_extra)
+                    except (AudioDownloadError, AudioTranscriptionError) as e:
+                        logger.error(f"[Sync XHS] 下载或转写失败: {e}", extra=log_extra)
+                        transcribed_text = f"提取文本失败: {str(e)}"
+                        transcription_cost = 0 # 失败不计积分
+                    except Exception as e:
+                         logger.error(f"[Sync XHS] 提取文本发生意外错误: {e}", exc_info=True, extra=log_extra)
+                         transcribed_text = f"提取文本时发生内部错误 ({trace_id})"
+                         transcription_cost = 0
+                else:
+                    transcribed_text = "无法获取视频URL进行转写"
+                    logger.warning("[Sync XHS] 未找到视频URL", extra=log_extra)
+                
+                # 将转写结果（或错误信息）添加到结果中
+                media_data["content"] = transcribed_text 
+            
+            # 累加总积分
+            # points_consumed += transcription_cost
+            
+            logger.info(f"[Sync XHS] 处理成功完成: {url}", extra=log_extra)
+            return {"status": "success", "data": media_data, "points_consumed": points_consumed}
+
+        except (XHSError, MediaError) as e: # 捕获已知的业务错误
+             error_msg = f"处理失败 ({type(e).__name__}): {str(e)}"
+             logger.error(f"[Sync XHS] {error_msg}", extra=log_extra)
+             return {"status": "failed", "error": error_msg, "points_consumed": 0}
+        except Exception as e: # 捕获其他意外错误
+             error_msg = f"发生意外错误: {str(e)}"
+             logger.error(f"[Sync XHS] {error_msg}", exc_info=True, extra=log_extra)
+             return {"status": "failed", "error": f"发生内部错误 ({trace_id})", "exception": str(e), "points_consumed": 0}

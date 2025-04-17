@@ -1,4 +1,3 @@
-import logging
 import time
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
