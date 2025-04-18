@@ -1,5 +1,7 @@
 # bot_api_v1/app/tasks/celery_tasks.py
 import time
+import sys  # 确保导入sys模块
+from datetime import datetime
 from bot_api_v1.app.core.logger import logger
 from celery.exceptions import Retry, MaxRetriesExceededError
 from celery.result import AsyncResult # 保留导入，虽然在此文件中可能不用了
@@ -97,7 +99,8 @@ def run_media_extraction_new(self,
                              platform: str,
                              user_id: str,
                              trace_id: str,
-                             app_id: str
+                             app_id: str,
+                             root_trace_key: str
                             ):
     """
     Celery Task (Task A): V3 - 返回包含状态的字典。
@@ -107,7 +110,7 @@ def run_media_extraction_new(self,
     """
     task_id = self.request.id
     effective_trace_id = trace_id or task_id
-    log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id, "task_stage": "A"}
+    log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id, "task_stage": "A", "root_trace_key": root_trace_key}
     logger.info_to_db(f"[Task A {task_id=}] V3 接收到任务, extract_text={extract_text}", extra=log_extra)
 
     try:
@@ -120,7 +123,7 @@ def run_media_extraction_new(self,
 
     try:
         logger.info(f"[Task A {task_id=}] V3，没捞到缓存，需要提取文本，开始准备阶段...", extra=log_extra)
-        prepare_result = prepare_media_for_transcription(platform, url,include_comments, user_id, trace_id, app_id)
+        prepare_result = prepare_media_for_transcription(platform, url,include_comments, user_id, trace_id, app_id,root_trace_key)
 
         if prepare_result.get("status") != "success":
             logger.error(f"[Task A {task_id=}] V3 准备阶段失败: {prepare_result.get('error')}", extra=log_extra)
@@ -161,7 +164,7 @@ def run_media_extraction_new(self,
 
         # 触发转写任务 (Task B)
         task_b_async_result = run_transcription_task.apply_async(
-            args=(audio_path, media_url_to_download , user_id, effective_trace_id, app_id, basic_info, platform,url,audio_duration),
+            args=(audio_path, media_url_to_download , user_id, effective_trace_id, app_id, basic_info, platform,url,audio_duration,root_trace_key),
             queue='transcription'
         )
         task_b_id = task_b_async_result.id
@@ -334,13 +337,14 @@ def run_transcription_task(self,
                            platform: str,
                            url: str,
                            audio_duration : int,
+                           root_trace_key: str = None
                            ):
     """
     Celery Task (Task B): 负责执行音频转写，并将转写结果作为自己的返回值。
     """
     task_id = self.request.id # Task B 自己的 ID
     effective_trace_id = trace_id
-    log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id, "task_stage": "B"}
+    log_extra = {"request_id": effective_trace_id, "celery_task_id": task_id, "user_id": user_id, "app_id": app_id, "task_stage": "B", "root_trace_key": root_trace_key}
         
     try:
         task_b_result = get_task_b_result(url)
@@ -451,3 +455,288 @@ def run_transcription_task(self,
             })
             self.update_state(state='FAILURE', meta=error_dict)
             return error_dict  # 返回错误信息而不是 None
+
+
+
+from bot_api_v1.app.services.log_service import LogService
+@celery_app.task(
+    name="tasks.save_log_to_db",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=5,
+    acks_late=True,
+    time_limit=30,
+    soft_time_limit=20,
+    queue='logging'  # 使用专门的日志队列
+)
+def save_log_to_db(
+    self, 
+    trace_key=None,
+    method_name=None,
+    source=None,
+    app_id=None,
+    user_uuid=None,
+    user_nickname=None,
+    entity_id=None,
+    type=None,
+    tollgate=None,
+    level=None,
+    para=None,
+    header=None,
+    body=None,
+    description=None,
+    memo=None,
+    ip_address=None):
+    """
+    Celery任务：将日志保存到数据库
+
+    参数与LogService.save_log保持一致
+    """
+    task_id = self.request.id
+    start_time = datetime.now()
+    
+    try:
+        print(f"[{start_time}] INFO: [Log Task {task_id}] 开始保存日志到数据库: {method_name}")
+        
+        # 使用同步方法直接保存日志
+        from bot_api_v1.app.services.log_service import LogService
+        result = LogService.save_log_sync(
+            trace_key=trace_key,
+            method_name=method_name,
+            source=source,
+            app_id=app_id,
+            user_uuid=user_uuid,
+            user_nickname=user_nickname,
+            entity_id=entity_id,
+            type=type,
+            tollgate=tollgate,
+            level=level,
+            para=para,
+            header=header,
+            body=body,
+            description=description,
+            memo=memo,
+            ip_address=ip_address
+        )
+        
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+        print(f"[{end_time}] INFO: [Log Task {task_id}] 日志保存成功，耗时: {duration:.3f}秒")
+        return {"status": "success", "message": "日志保存成功", "duration": duration}
+    except Exception as e:
+        print(f"[{datetime.now()}] ERROR: [Log Task {task_id}] 保存日志失败: {str(e)}", file=sys.stderr)
+        # 记录更详细的错误信息
+        error_details = {
+            "error_type": type(e).__name__,
+            "error_message": str(e),
+            "trace_key": trace_key,
+            "method_name": method_name
+        }
+        
+        try:
+            # 使用更详细的重试信息
+            print(f"[{datetime.now()}] INFO: [Log Task {task_id}] 尝试重试，当前重试次数: {self.request.retries}")
+            self.retry(exc=e, countdown=5 * (2 ** self.request.retries))  # 指数退避策略
+        except Exception as retry_err:
+            print(f"[{datetime.now()}] ERROR: [Log Task {task_id}] 重试保存日志失败: {str(retry_err)}", file=sys.stderr)
+            return {
+                "status": "failed", 
+                "error": str(e), 
+                "retry_error": str(retry_err),
+                "error_details": error_details
+            }
+
+
+
+
+@celery_app.task(
+    name="tasks.save_logs_batch",
+    bind=True,
+    max_retries=3,
+    default_retry_delay=10,
+    acks_late=True,
+    time_limit=60, # 可以根据需要调整
+    soft_time_limit=50,
+    queue='logging'
+)
+def save_logs_batch(self, logs_data):
+    """
+    批量处理多条日志记录 (修改为使用同步方法)
+
+    Args:
+        logs_data: 包含多条日志记录的列表
+    """
+    task_id = self.request.id
+    start_time = datetime.now()
+    total_logs = len(logs_data)
+
+    print(f"[{start_time}] INFO: [Batch Log Task {task_id}] 开始(同步)批量处理 {total_logs} 条日志")
+
+    results = {
+        "success": 0,
+        "failed": 0,
+        "errors": []
+    }
+
+    # 不再需要 asyncio 和 loop
+
+    try:
+        # 直接导入 LogService (或者在模块顶部导入)
+        from bot_api_v1.app.services.log_service import LogService
+
+        # 使用 for 循环逐条调用同步保存方法
+        for i, log_data in enumerate(logs_data):
+            try:
+                # 调用同步方法
+                save_successful = LogService.save_log_sync(**log_data)
+                if save_successful:
+                    results["success"] += 1
+                else:
+                    # 如果 save_log_sync 设计为失败时返回 False
+                    results["failed"] += 1
+                    results["errors"].append({
+                        "index": i,
+                        "error": "LogService.save_log_sync returned False or failed silently",
+                        "log_data": log_data # 截断或选择性记录 log_data 以免过长
+                    })
+            except Exception as inner_e:
+                # 捕获 save_log_sync 可能抛出的任何异常
+                results["failed"] += 1
+                results["errors"].append({
+                    "index": i,
+                    "error": f"Exception during save_log_sync: {str(inner_e)}",
+                    "error_type": type(inner_e).__name__,
+                    "log_data": log_data # 截断或选择性记录
+                })
+                # 打印内部错误，同样避免 logger
+                print(f"[{datetime.now()}] ERROR: [Batch Log Task {task_id}] Error saving log at index {i}: {inner_e}", file=sys.stderr)
+
+
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
+        print(f"[{end_time}] INFO: [Batch Log Task {task_id}] (同步)批量处理完成，"
+              f"成功: {results['success']}/{total_logs}，"
+              f"失败: {results['failed']}/{total_logs}，"
+              f"耗时: {duration:.3f}秒")
+
+        return {
+            "status": "completed",
+            "total": total_logs,
+            "success": results["success"],
+            "failed": results["failed"],
+            "duration": duration,
+            "errors": results["errors"] if results["failed"] > 0 else []
+        }
+
+    except Exception as e:
+        # 处理任务级别的意外错误 (例如导入失败等)
+        print(f"[{datetime.now()}] ERROR: [Batch Log Task {task_id}] 任务执行失败: {str(e)}", file=sys.stderr)
+        try:
+            # 这里仍然可以重试整个批次，但可能导致已成功的日志被重复处理
+            # 或者选择不重试，接受这批日志处理失败
+            # self.retry(exc=e, countdown=10 * (2 ** self.request.retries))
+            # return a failed status without retry:
+             return {
+                 "status": "failed",
+                 "error": f"Outer task exception: {str(e)}",
+                 "total": total_logs,
+                 "success": results["success"], # Report any successes before the outer exception
+                 "failed": total_logs - results["success"], # Assume the rest failed
+             }
+        except Exception as retry_err: # Catch potential retry errors
+            return {
+                "status": "failed",
+                "error": str(e),
+                "retry_error": str(retry_err)
+            }
+    # finally: loop.close() # 不再需要这一行
+
+# @celery_app.task(
+#     name="tasks.save_logs_batch",
+#     bind=True,
+#     max_retries=3,
+#     default_retry_delay=10,
+#     acks_late=True,
+#     time_limit=60,
+#     soft_time_limit=50,
+#     queue='logging'
+# )
+# def save_logs_batch(self, logs_data):
+#     """
+#     批量处理多条日志记录
+    
+#     Args:
+#         logs_data: 包含多条日志记录的列表
+#     """
+#     task_id = self.request.id
+#     start_time = datetime.now()
+#     total_logs = len(logs_data)
+    
+#     print(f"[{start_time}] INFO: [Batch Log Task {task_id}] 开始批量处理 {total_logs} 条日志")
+    
+#     results = {
+#         "success": 0,
+#         "failed": 0,
+#         "errors": []
+#     }
+    
+#     import asyncio
+#     loop = asyncio.new_event_loop()
+#     asyncio.set_event_loop(loop)
+    
+#     try:
+#         # 创建所有日志保存任务的协程
+#         async def save_all_logs():
+#             tasks = []
+#             for log_data in logs_data:
+#                 tasks.append(LogService.save_log(**log_data))
+            
+#             # 并发执行所有任务
+#             results_list = await asyncio.gather(*tasks, return_exceptions=True)
+#             return results_list
+        
+#         # 执行批量保存
+#         results_list = loop.run_until_complete(save_all_logs())
+        
+#         # 处理结果
+#         for i, result in enumerate(results_list):
+#             if isinstance(result, Exception):
+#                 results["failed"] += 1
+#                 results["errors"].append({
+#                     "index": i,
+#                     "error": str(result),
+#                     "log_data": logs_data[i]
+#                 })
+#             else:
+#                 results["success"] += 1
+        
+#         end_time = datetime.now()
+#         duration = (end_time - start_time).total_seconds()
+        
+#         print(f"[{end_time}] INFO: [Batch Log Task {task_id}] 批量处理完成，"
+#               f"成功: {results['success']}/{total_logs}，"
+#               f"失败: {results['failed']}/{total_logs}，"
+#               f"耗时: {duration:.3f}秒")
+        
+#         return {
+#             "status": "completed",
+#             "total": total_logs,
+#             "success": results["success"],
+#             "failed": results["failed"],
+#             "duration": duration,
+#             "errors": results["errors"] if results["failed"] > 0 else []
+#         }
+    
+#     except Exception as e:
+#         print(f"[{datetime.now()}] ERROR: [Batch Log Task {task_id}] 批量处理失败: {str(e)}", file=sys.stderr)
+#         try:
+#             self.retry(exc=e, countdown=10 * (2 ** self.request.retries))
+#         except Exception as retry_err:
+#             return {
+#                 "status": "failed",
+#                 "error": str(e),
+#                 "retry_error": str(retry_err)
+#             }
+#     finally:
+#         loop.close()  # 确保事件循环被关闭

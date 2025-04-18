@@ -37,8 +37,8 @@ async def init_request_context(request: Request, trace_key: str):
     source_info = headers_dict.get('x-source', headers_dict.get('X-Source', 'api'))
     user_uuid = headers_dict.get('x-user-uuid', headers_dict.get('X-User-Uuid'))
     user_nickname = headers_dict.get('x-user-nickname', headers_dict.get('X-User-Nickname'))
-    
-    # 解决用户昵称的中文乱码问题
+    root_trace_key = headers_dict.get('x_root_trace_key', headers_dict.get('x-root-trace-key'))
+
     try:
         if isinstance(user_nickname, bytes):
             user_nickname = user_nickname.decode('utf-8')
@@ -72,6 +72,7 @@ async def init_request_context(request: Request, trace_key: str):
         'current_tollgate': current_tollgate,
         'type': type,
         'request_time': datetime.now().isoformat(),
+        'root_trace_key': root_trace_key
     }
     
     # 设置上下文
@@ -205,6 +206,9 @@ async def log_request(request: Request, trace_key: str, context_data: dict,
         # 使用全局任务管理系统注册日志任务
         # 名称包含请求路径以便于追踪
         task_name = f"log_request:{request.url.path}"
+        root_trace_key = context_data.get('root_trace_key')
+        if not root_trace_key:
+            root_trace_key = trace_key
         
         # 注册异步任务，不等待其完成
         register_task(
@@ -223,6 +227,7 @@ async def log_request(request: Request, trace_key: str, context_data: dict,
                 para=query_params,
                 header=sanitized_headers,
                 body=request_body,
+                description=root_trace_key,
                 memo=log_memo,
                 ip_address=client_ip
             ),
@@ -336,7 +341,10 @@ async def log_response(response: Response, request: Request, trace_key: str,
         
         # 使用全局任务管理系统注册日志任务
         task_name = f"log_response:{request.url.path}"
-        
+        root_trace_key = context_data.get('root_trace_key')
+        if not root_trace_key:
+            root_trace_key = trace_key
+
         register_task(
             name=task_name,
             coro=LogService.save_log(
@@ -353,6 +361,7 @@ async def log_response(response: Response, request: Request, trace_key: str,
                 para=None,
                 header=sanitized_response_headers,
                 body=response_body,
+                description=root_trace_key,
                 memo=response_memo,
                 ip_address=client_ip
             ),
@@ -412,7 +421,10 @@ async def log_error(e: Exception, request: Request, trace_key: str,
     # 构造备注信息
     title = tollgate_config.get("title", "") if tollgate_config else ""
     error_memo = f"[{title}] Error: {error_message}, Duration: {process_time:.2f}ms" if title else f"Error: {error_message}, Duration: {process_time:.2f}ms"
-    
+    root_trace_key = context_data.get('root_trace_key')
+    if not root_trace_key:
+        root_trace_key = trace_key
+
     # 记录错误日志到数据库
     try:
         # 使用全局任务管理系统注册日志任务
@@ -434,6 +446,7 @@ async def log_error(e: Exception, request: Request, trace_key: str,
                 para=None,
                 header=None,
                 body=error_message,
+                description=root_trace_key,
                 memo=error_memo,
                 ip_address=client_ip
             ),

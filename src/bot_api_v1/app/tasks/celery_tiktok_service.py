@@ -240,14 +240,15 @@ class CeleryTikTokService:
         url: str,
         extract_text: bool,
         user_id_for_points: str, 
-        trace_id: str
+        trace_id: str,
+        root_trace_key: str
     ) -> dict:
         """
         [同步执行] 获取抖音视频信息，并可选提取文本。
         这是 CeleryTikTokService 的核心方法。
         """
         # --- 逻辑基本保持不变，依赖于正确的初始化和同步 ScriptService ---
-        log_extra = {"request_id": trace_id, "user_id": user_id_for_points}
+        log_extra = {"request_id": trace_id, "user_id": user_id_for_points,"root_trace_key": root_trace_key}
         logger.info(f"[Celery TikTok Service] 开始获取视频信息: {url}, extract_text={extract_text}", extra=log_extra)
 
         points_consumed = 0

@@ -29,13 +29,14 @@ def execute_media_extraction_sync(
     platform: str,
     user_id: str, 
     trace_id: str, 
-    app_id: str   
+    app_id: str   ,
+    root_trace_key: str
 ) -> dict:
     """
     [同步执行] 分发器：根据平台调用对应的 Service 的同步方法。
     应用缓存装饰器。
     """
-    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id}
+    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id,"root_trace_key": root_trace_key}
     logger.info(f"[Sync Logic Dispatcher {trace_id=}] 分发任务: platform={platform}, url={url}", extra=log_extra)
 
     try:
@@ -48,7 +49,8 @@ def execute_media_extraction_sync(
                 url=url, 
                 extract_text=extract_text, 
                 user_id_for_points=user_id, 
-                trace_id=trace_id
+                trace_id=trace_id,
+                root_trace_key=root_trace_key
             )
         elif platform == MediaPlatform.DOUYIN:
             # --- 调用新的 CeleryTikTokService 的同步方法 ---
@@ -59,7 +61,8 @@ def execute_media_extraction_sync(
                 url=url, 
                 extract_text=extract_text,
                 user_id_for_points=user_id,
-                trace_id=trace_id
+                trace_id=trace_id,
+                root_trace_key=root_trace_key
             )
         else:
             raise MediaError(f"不支持的媒体平台: {platform}")
@@ -95,13 +98,14 @@ def fetch_basic_media_info(
     include_comments: bool, # 注意：可能只对特定平台有意义
     user_id: str,
     trace_id: str,
-    app_id: str
+    app_id: str,
+    root_trace_key: str
 ) -> dict:
     """
     [同步执行] 只获取媒体的基础信息 (元数据, URL等), 不下载文件, 不转写。
     应用缓存。
     """
-    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id, "logic_step": "fetch_basic"}
+    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id, "logic_step": "fetch_basic","root_trace_key": root_trace_key}
     logger.info_to_db(f"[Fetch Basic {trace_id=}] 开始获取基础信息: platform={platform}, url={url}", extra=log_extra)
 
     base_cost = 10 # 假设基础信息固定成本
@@ -178,13 +182,14 @@ def prepare_media_for_transcription(
     include_comments: bool,
     user_id: str,
     trace_id: str,
-    app_id: str
+    app_id: str,
+    root_trace_key: str
 ) -> dict:
     """
     [同步执行] 获取媒体基础信息，并下载需要转写的音频文件到共享路径。
     不执行转写。
     """
-    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id, "logic_step": "prepare_transcription"}
+    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id, "logic_step": "prepare_transcription","root_trace_key": root_trace_key}
     logger.info_to_db(f"[Prepare Transcription {trace_id=}] 开始准备阶段: platform={platform}, url={url}", extra=log_extra)
 
     audio_path = None
@@ -197,7 +202,8 @@ def prepare_media_for_transcription(
         include_comments=include_comments,
         user_id=user_id,
         trace_id=trace_id,
-        app_id=app_id
+        app_id=app_id,
+        root_trace_key=root_trace_key
     )
 
     if basic_info_result.get("status") != "success":
@@ -256,10 +262,10 @@ def prepare_media_for_transcription(
         
         # 根据平台选择不同的下载方法
         if platform == MediaPlatform.DOUYIN:
-            audio_path= script_service.download_media_sync(media_url_to_download,trace_id)
+            audio_path= script_service.download_media_sync(media_url_to_download,trace_id,root_trace_key)
         else:
             # 对于其他平台使用通用下载方法
-            audio_path, _ = script_service.download_audio_sync(media_url_to_download, trace_id)
+            audio_path, _ = script_service.download_audio_sync(media_url_to_download, trace_id,root_trace_key)
         
         if not audio_path or not os.path.exists(audio_path):  # 检查路径有效性
             raise AudioDownloadError("下载服务未返回有效路径或文件不存在")

@@ -56,7 +56,27 @@ class RequestContext:
     def get_method_name() -> Optional[str]:
         """获取当前请求的方法名"""
         return _request_ctx_var.get().get('method_name')
+
+    @staticmethod
+    def get_root_trace_key() -> str:
+        """获取当前请求的根追踪标识
+
+        如果不存在，则自动生成一个新的
+        """
+        ctx = _request_ctx_var.get()
+        root_trace_key = ctx.get ('root_trace_key')
+        if not root_trace_key:
+            root_trace_key = ctx.get('trace_key')
+
+        return root_trace_key
     
+    @staticmethod
+    def set_root_trace_key(root_trace_key: str) -> None:
+        """设置当前请求的根追踪标识"""
+        ctx = _request_ctx_var.get()
+        ctx['root_trace_key'] = root_trace_key
+        _request_ctx_var.set(ctx)
+
     @staticmethod
     def get_source() -> str:
         """获取当前请求的来源"""

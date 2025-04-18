@@ -62,7 +62,6 @@ class Settings(BaseSettings):
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
     SHARED_TEMP_DIR : str = os.getenv("SHARED_TEMP_DIR", "/Users/v9/Downloads/nfs")
 
-
     # 缓存设置
     REDIS_URL: Optional[str] = os.getenv("REDIS_URL") # 这个可用于通用 Redis 缓存
     CACHE_EXPIRATION: int = int(os.getenv("CACHE_EXPIRATION", "100"))
@@ -104,7 +103,8 @@ class Settings(BaseSettings):
     ENABLE_DB_LOGGING: bool = os.getenv("ENABLE_DB_LOGGING", "false").lower() == "true"
     LOG_TO_STDOUT: bool = os.getenv("LOG_TO_STDOUT", "true").lower() == "true"
     LOG_TO_FILE: bool = os.getenv("LOG_TO_FILE", "true").lower() == "true"
-    LOG_FILE_PATH: Optional[str] = os.getenv("LOG_FILE_PATH")
+    LOG_FILE_PATH: Optional[str] = os.getenv("LOG_FILE_PATH", "/Users/v9/Downloads/nfs/logs")
+
 
     # 性能和限流设置 (保持不变)
     RATE_LIMIT_PER_MINUTE: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "100"))

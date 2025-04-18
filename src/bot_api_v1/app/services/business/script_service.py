@@ -82,7 +82,9 @@ class ScriptService:
                 logger.info(f"加载Whisper {self.whisper_model_name}模型到{device}设备", extra={"request_id": trace_key})
                 if device == "cuda":
                     torch.set_float32_matmul_precision('medium')
-                model = whisper.load_model(self.whisper_model_name, device=device, download_root=os.path.join(self.temp_dir, "whisper_models"))
+                # model = whisper.load_model(self.whisper_model_name, device=device, download_root=os.path.join(self.temp_dir, "whisper_models"))
+                model = whisper.load_model(self.whisper_model_name, device=device)
+
                 ScriptService._model_cache[model_key] = model
                 return model
             except RuntimeError as e:
@@ -92,7 +94,9 @@ class ScriptService:
                     if cpu_model_key in ScriptService._model_cache:
                         return ScriptService._model_cache[cpu_model_key]
                     else:
-                        model = whisper.load_model(self.whisper_model_name, device="cpu", download_root=os.path.join(self.temp_dir, "whisper_models"))
+                        model = whisper.load_model(self.whisper_model_name, device="cpu")
+                        # model = whisper.load_model(self.whisper_model_name, device="cpu", download_root=os.path.join(self.temp_dir, "whisper_models"))
+
                         ScriptService._model_cache[cpu_model_key] = model
                         return model
                 logger.error(f"Whisper模型加载失败: {str(e)}", exc_info=True, extra={"request_id": trace_key})
@@ -648,13 +652,14 @@ class ScriptService:
         trace_id: str, # 直接传递 trace_id
         # user_id: str, # 如果日志或其他逻辑需要，也传递进来
         # app_id: str,
-        download_base_dir: str = BASE_TEMP_DIR # 使用共享的基础临时目录
+        download_base_dir: str = BASE_TEMP_DIR, # 使用共享的基础临时目录,
+        root_trace_key: str = None # 传递根 trace_id
     ) -> str: # 返回下载后的文件绝对路径
         """
         [同步执行] 从 URL 下载媒体文件 (视频/音频) 到共享临时目录。
         供 Celery Task A 调用。
         """
-        log_extra = {"request_id": trace_id} # , "user_id": user_id, "app_id": app_id
+        log_extra = {"request_id": trace_id, "root_trace_key":root_trace_key } # , "user_id": user_id, "app_id": app_id
         logger.info(f"[Sync Download] 开始下载媒体: {url}", extra=log_extra)
 
         # 1. 创建唯一的临时下载目录
@@ -782,9 +787,9 @@ class ScriptService:
 
     # --- 新增的同步方法 (供 Celery 调用) ---
 
-    def download_audio_sync(self, url: str, trace_id: str) -> Tuple[str, str]:
+    def download_audio_sync(self, url: str, trace_id: str,root_trace_key:str) -> Tuple[str, str]:
         """[同步执行] 下载音频并返回文件路径和标题"""
-        log_extra = {"request_id": trace_id} # 使用传入的 trace_id
+        log_extra = {"request_id": trace_id,"root_trace_key":root_trace_key} # 使用传入的 trace_id
         logger.info(f"[Sync] 开始下载音频: {url}", extra=log_extra)
         download_dir = os.path.join(settings.SHARED_TEMP_DIR, f"audio_{int(time.time())}_{trace_id[-6:]}")
         os.makedirs(download_dir, exist_ok=True)

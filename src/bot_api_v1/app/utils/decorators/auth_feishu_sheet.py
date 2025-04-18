@@ -2,6 +2,7 @@ from functools import wraps
 from typing import Callable, Any
 
 from fastapi import Request, HTTPException
+from sympy import root
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.core.schemas import BaseResponse
@@ -104,12 +105,15 @@ def require_feishu_signature(exempt: bool = False):
                         }
                     )
                 
+
+                root_trace_key = request_ctx.get_root_trace_key()
                 # 签名验证成功，记录token信息
                 logger.info_to_db(
                     f"飞书签名验证成功，并且流量识别成功，go-on，data is {token_data}",
                     extra={
                         "request_id": trace_key,
-                        "token_data": token_data
+                        "token_data": token_data,
+                        "root_trace_key": root_trace_key
                     }
                 )
                 
@@ -124,7 +128,8 @@ def require_feishu_signature(exempt: bool = False):
                     f"飞书签名验证发生异常: {str(e)}",
                     extra={
                         "request_id": trace_key,
-                        "signature": base_signature
+                        "signature": base_signature,
+                        "root_trace_key": root_trace_key
                     },
                     exc_info=True
                 )
