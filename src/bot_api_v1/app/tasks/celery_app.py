@@ -1,4 +1,9 @@
 # bot_api_v1/app/tasks/celery_app.py (已更新)
+import os
+import time
+from datetime import datetime
+import sys
+from celery.signals import worker_process_init, worker_process_shutdown
 
 from celery import Celery
 # !! 导入 config 中的 settings 对象 !!
@@ -39,3 +44,20 @@ celery_app.conf.update(
 # # if __name__ == '__main__' 部分可以保持不变，用于本地测试启动 Worker
 # if __name__ == '__main__':
 #     celery_app.start(['worker', '--loglevel=info'])
+
+# 在celery_app.py中添加
+@worker_process_init.connect
+def init_worker_process(sender=None, **kwargs):
+    """当Celery工作进程启动时初始化日志处理器"""
+    print(f"[{datetime.now()}] INFO: Celery工作进程 {os.getpid()} 启动，初始化日志处理器")
+    # 可以在这里进行一些初始化工作
+
+@worker_process_shutdown.connect
+def shutdown_worker_process(sender=None, **kwargs):
+    """当Celery工作进程关闭时刷新日志缓冲区"""
+    from bot_api_v1.app.core.logger import CeleryLogHandler
+    print(f"[{datetime.now()}] INFO: Celery工作进程 {os.getpid()} 关闭，刷新日志缓冲区")
+    try:
+        CeleryLogHandler._flush_logs()
+    except Exception as e:
+        print(f"[{datetime.now()}] ERROR: 工作进程关闭时刷新日志失败: {e}", file=sys.stderr)

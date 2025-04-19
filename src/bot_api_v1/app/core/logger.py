@@ -31,6 +31,153 @@ loguru_logger.remove()
 # 加载环境变量
 load_dotenv()
 
+
+
+
+# --- 新增：检测是否在Celery环境中运行 ---
+def is_running_in_celery():
+    """检测当前代码是否在Celery工作进程中运行"""
+    import sys
+    return any('celery' in arg for arg in sys.argv)
+
+# --- 新增：Celery环境下的日志处理器 ---
+class CeleryLogHandler:
+    """通过Celery任务处理日志持久化"""
+    # 使用进程本地存储而不是类变量
+    def __init__(cls):
+        # 这些变量不会在类级别初始化，而是在每个进程中单独初始化
+        pass
+    @classmethod
+    def _get_process_local_storage(cls):
+        """获取进程本地存储"""
+        if not hasattr(cls, '_process_local'):
+            # 为每个进程创建独立的存储
+            import multiprocessing
+            cls._process_local = {
+                'log_buffer': [],
+                'buffer_size': 10,
+                'buffer_lock': threading.Lock(),
+                'flush_timer': None,
+                'process_id': os.getpid(),  # 记录进程ID用于调试
+                'last_flush_time': datetime.now()
+            }
+        return cls._process_local
+    
+    @classmethod
+    def _flush_logs(cls):
+        """将缓冲区中的日志发送到Celery任务队列"""
+        storage = cls._get_process_local_storage()
+        
+        with storage['buffer_lock']:
+            if not storage['log_buffer']:
+                return
+                
+            logs_to_send = storage['log_buffer'].copy()
+            storage['log_buffer'] = []
+            storage['last_flush_time'] = datetime.now()
+        
+        try:
+            # 导入并调用批量Celery任务
+            from bot_api_v1.app.tasks.celery_tasks import save_logs_batch
+            save_logs_batch.delay(logs_to_send)
+            print(f"[{datetime.now()}] INFO: 进程 {storage['process_id']} 已发送 {len(logs_to_send)} 条日志到Celery批处理队列")
+        except Exception as e:
+            print(f"[{datetime.now()}] ERROR: 进程 {storage['process_id']} 发送日志到Celery批处理队列失败: {e}", file=sys.stderr)
+            # 失败时回退到单条处理
+            try:
+                from bot_api_v1.app.tasks.celery_tasks import save_log_to_db
+                for log_data in logs_to_send:
+                    save_log_to_db.delay(**log_data)
+            except Exception as fallback_err:
+                print(f"[{datetime.now()}] ERROR: 进程 {storage['process_id']} 回退到单条处理也失败: {fallback_err}", file=sys.stderr)
+    
+    @classmethod
+    def _schedule_flush(cls):
+        """安排定时刷新"""
+        storage = cls._get_process_local_storage()
+        
+        if storage['flush_timer'] is not None:
+            try:
+                storage['flush_timer'].cancel()
+            except:
+                pass  # 忽略可能的错误
+            
+        # 创建新的定时器
+        storage['flush_timer'] = threading.Timer(5.0, cls._flush_logs)
+        storage['flush_timer'].daemon = True
+        storage['flush_timer'].start()
+    
+    @classmethod
+    def write(cls, message):
+        """将日志发送到Celery任务队列"""
+        if message.record["extra"].get("log_to_db", False):
+            # 提取所需信息
+            log_data = {
+                "trace_key": message.record["extra"].get("request_id", 'system'),
+                "method_name": message.record["extra"].get("db_method_name", message.record["function"]),
+                "source": message.record["extra"].get("source", 'unknown'),
+                "app_id": message.record["extra"].get("app_id"),
+                "user_uuid": message.record["extra"].get("user_id"),
+                "user_nickname": message.record["extra"].get("user_name"),
+                "entity_id": message.record["extra"].get("entity_id"),
+                "type": message.record["extra"].get("db_type", message.record["level"].name.lower()),
+                "tollgate": message.record["extra"].get("tollgate", '-'),
+                "level": message.record["level"].name.lower(),
+                "para": None,
+                "header": None,
+                "body": message.record["extra"].get("db_body", message.record["message"]),
+                "description": message.record["extra"].get("db_description", message.record["extra"].get("root_trace_key")),
+                "memo": message.record["extra"].get("db_memo", message.record["message"]),
+                "ip_address": message.record["extra"].get("ip_address"),
+                # 添加进程信息用于调试
+                # "process_id": os.getpid(),
+                # "timestamp": datetime.now().isoformat(),
+            }
+            
+            # 对于严重错误，立即处理而不是批处理
+            if message.record["level"].no >= 40:  # ERROR及以上级别
+                try:
+                    # 使用同步方法直接保存日志，而不是通过Celery任务
+                    from bot_api_v1.app.services.log_service import LogService
+                    result = LogService.save_log_sync(**log_data)
+                    if result:
+                        print(f"[{datetime.now()}] INFO: 进程 {os.getpid()} 严重错误日志已同步保存到数据库")
+                    else:
+                        print(f"[{datetime.now()}] ERROR: 进程 {os.getpid()} 同步保存严重错误日志失败")
+                    return
+                except Exception as e:
+                    print(f"[{datetime.now()}] ERROR: 进程 {os.getpid()} 发送严重错误日志到Celery队列失败: {e}", file=sys.stderr)
+                    
+                    try:
+                        from bot_api_v1.app.tasks.celery_tasks import save_log_to_db
+                        save_log_to_db.delay(**log_data)
+                        print(f"[{datetime.now()}] INFO: 进程 {os.getpid()} 严重错误日志已发送到Celery队列（回退）")
+                    except Exception as fallback_err:
+                        print(f"[{datetime.now()}] ERROR: 进程 {os.getpid()} 发送严重错误日志到Celery队列失败: {fallback_err}", file=sys.stderr)
+            
+            # 获取进程本地存储
+            storage = cls._get_process_local_storage()
+            
+            # 检查上次刷新时间，如果超过10秒，强制刷新
+            time_since_last_flush = (datetime.now() - storage['last_flush_time']).total_seconds()
+            if time_since_last_flush > 10:
+                cls._flush_logs()
+                
+            # 其他日志加入缓冲区
+            with storage['buffer_lock']:
+                storage['log_buffer'].append(log_data)
+                buffer_size = len(storage['log_buffer'])
+                
+            # 如果缓冲区达到阈值，立即刷新
+            if buffer_size >= storage['buffer_size']:
+                cls._flush_logs()
+            else:
+                # 否则安排定时刷新
+                cls._schedule_flush()
+
+
+
+
 # --- 新增：线程安全的异步数据库日志 Sink ---
 class AsyncDatabaseLogSink:
     def __init__(self):
@@ -62,6 +209,7 @@ class AsyncDatabaseLogSink:
                 "para": None, # 按需从 extra 获取或留空
                 "header": None, # 按需从 extra 获取或留空
                 "body": message.record["extra"].get("db_body", message.record["message"]), # 优先使用 extra
+                "description": message.record["extra"].get("db_description", message.record["extra"].get("root_trace_key")),
                 "memo": message.record["extra"].get("db_memo", message.record["message"]), # 优先使用 extra
                 "ip_address": message.record["extra"].get("ip_address"),
                 # "created_at": message.record["time"] # 使用 loguru 的时间
@@ -158,7 +306,7 @@ db_log_sink = AsyncDatabaseLogSink()
 def setup_logger():
     """初始化并配置logger"""
     log_level = settings.LOG_LEVEL.upper()
-    log_dir = Path(os.getenv("LOG_DIR", Path(__file__).parent.parent / "logs"))
+    log_dir = Path(settings.LOG_FILE_PATH, Path(__file__).parent.parent / "logs")
     log_dir.mkdir(exist_ok=True)
 
     # 添加控制台输出处理器 (保持不变)
@@ -203,13 +351,23 @@ def setup_logger():
     def db_filter(record):
         return record["extra"].get("log_to_db", False) and record["level"].no >= loguru_logger.level("INFO").no
 
-    loguru_logger.add(
-        db_log_sink.write, # 将 sink 实例的 write 方法作为 sink
-        level="INFO",      # 最低处理 INFO 级别
-        filter=db_filter,  # 使用上面的过滤器
-        enqueue=False      # Loguru 的 enqueue 对我们的自定义队列模式不是必需的
-                           # 并且在异步 Sink 中使用 enqueue=True 可能导致问题
-    )
+
+    if is_running_in_celery():
+        loguru_logger.add(
+            CeleryLogHandler.write,
+            level="INFO",
+            filter=db_filter,
+            enqueue=False
+        )
+    else:
+        # 启动异步数据库 Sink
+        loguru_logger.add(
+            db_log_sink.write, # 将 sink 实例的 write 方法作为 sink
+            level="INFO",      # 最低处理 INFO 级别
+            filter=db_filter,  # 使用上面的过滤器
+            enqueue=False      # Loguru 的 enqueue 对我们的自定义队列模式不是必需的
+                            # 并且在异步 Sink 中使用 enqueue=True 可能导致问题
+        )
     # --- 结束修改 ---
 
     # 初始绑定保持不变

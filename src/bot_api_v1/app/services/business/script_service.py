@@ -25,7 +25,7 @@ from pydub import AudioSegment
 from bot_api_v1.app.core.config import settings # 假设你有配置文件
 
 # 假设这些导入路径是正确的
-from bot_api_v1.app.core.cache import cache_result
+from bot_api_v1.app.core.cache import cache_result,cache_result_sync
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.utils.decorators.log_service_call import log_service_call
 from bot_api_v1.app.core.context import request_ctx
@@ -49,10 +49,11 @@ class ScriptService:
 
     def __init__(self,
                  temp_dir: Optional[str] = None,
-                 whisper_model: str = "tiny",
+                 whisper_model: str = settings.WHISPER_MODEL,
                  max_parallel_chunks: int = 4,
                  chunk_duration: int = 60):
-        self.temp_dir = temp_dir or tempfile.gettempdir()
+        self.temp_dir = settings.SHARED_TEMP_DIR
+        # self.temp_dir = temp_dir or tempfile.gettempdir()
         self.whisper_model_name = whisper_model
         self.max_parallel_chunks = max_parallel_chunks
         self.chunk_duration = chunk_duration
@@ -81,7 +82,9 @@ class ScriptService:
                 logger.info(f"加载Whisper {self.whisper_model_name}模型到{device}设备", extra={"request_id": trace_key})
                 if device == "cuda":
                     torch.set_float32_matmul_precision('medium')
-                model = whisper.load_model(self.whisper_model_name, device=device, download_root=os.path.join(self.temp_dir, "whisper_models"))
+                # model = whisper.load_model(self.whisper_model_name, device=device, download_root=os.path.join(self.temp_dir, "whisper_models"))
+                model = whisper.load_model(self.whisper_model_name, device=device)
+
                 ScriptService._model_cache[model_key] = model
                 return model
             except RuntimeError as e:
@@ -91,7 +94,9 @@ class ScriptService:
                     if cpu_model_key in ScriptService._model_cache:
                         return ScriptService._model_cache[cpu_model_key]
                     else:
-                        model = whisper.load_model(self.whisper_model_name, device="cpu", download_root=os.path.join(self.temp_dir, "whisper_models"))
+                        model = whisper.load_model(self.whisper_model_name, device="cpu")
+                        # model = whisper.load_model(self.whisper_model_name, device="cpu", download_root=os.path.join(self.temp_dir, "whisper_models"))
+
                         ScriptService._model_cache[cpu_model_key] = model
                         return model
                 logger.error(f"Whisper模型加载失败: {str(e)}", exc_info=True, extra={"request_id": trace_key})
@@ -525,6 +530,7 @@ class ScriptService:
         try:
             parent_dir = os.path.dirname(file_path)
             if parent_dir and os.path.exists(parent_dir) and parent_dir != self.temp_dir and parent_dir != os.path.abspath(os.sep):
+            # if parent_dir and os.path.exists(parent_dir) and parent_dir != settings.SHARED_TEMP_DIR and parent_dir != os.path.abspath(os.sep):
                 # 检查目录是否为空
                 if not os.listdir(parent_dir):
                     self._cleanup_dir(parent_dir, trace_key)
@@ -620,16 +626,6 @@ class ScriptService:
 
 
     BASE_TEMP_DIR = getattr(settings, 'SHARED_TEMP_DIR', '/tmp/shared_media_temp')
-    def _cleanup_dir_sync(self,directory: str, trace_id: Optional[str] = None):
-        """同步清理目录"""
-        log_extra = {"request_id": trace_id or "cleanup"}
-        if os.path.exists(directory):
-            try:
-                shutil.rmtree(directory)
-                logger.debug(f"成功清理临时目录: {directory}", extra=log_extra)
-            except Exception as e:
-                logger.error(f"清理临时目录失败: {directory}, Error: {e}", exc_info=True, extra=log_extra)
-
     def _safe_remove_file_sync(self,file_path: str, trace_id: Optional[str] = None):
         """同步安全删除文件"""
         log_extra = {"request_id": trace_id or "cleanup"}
@@ -640,6 +636,15 @@ class ScriptService:
             except Exception as e:
                 logger.error(f"删除文件失败: {file_path}, Error: {e}", extra=log_extra)
 
+    def _cleanup_dir_sync(self,directory: str, trace_id: Optional[str] = None):
+        """同步清理目录"""
+        log_extra = {"request_id": trace_id or "cleanup"}
+        if os.path.exists(directory):
+            try:
+                shutil.rmtree(directory)
+                logger.debug(f"成功清理临时目录: {directory}", extra=log_extra)
+            except Exception as e:
+                logger.error(f"清理临时目录失败: {directory}, Error: {e}", exc_info=True, extra=log_extra)
 
     def download_media_sync(
         self, # 添加 self 参数
@@ -647,13 +652,14 @@ class ScriptService:
         trace_id: str, # 直接传递 trace_id
         # user_id: str, # 如果日志或其他逻辑需要，也传递进来
         # app_id: str,
-        download_base_dir: str = BASE_TEMP_DIR # 使用共享的基础临时目录
+        download_base_dir: str = BASE_TEMP_DIR, # 使用共享的基础临时目录,
+        root_trace_key: str = None # 传递根 trace_id
     ) -> str: # 返回下载后的文件绝对路径
         """
         [同步执行] 从 URL 下载媒体文件 (视频/音频) 到共享临时目录。
         供 Celery Task A 调用。
         """
-        log_extra = {"request_id": trace_id} # , "user_id": user_id, "app_id": app_id
+        log_extra = {"request_id": trace_id, "root_trace_key":root_trace_key } # , "user_id": user_id, "app_id": app_id
         logger.info(f"[Sync Download] 开始下载媒体: {url}", extra=log_extra)
 
         # 1. 创建唯一的临时下载目录
@@ -741,7 +747,7 @@ class ScriptService:
 
             if bytes_downloaded == 0 and response.status_code == 200:
                 logger.error(f"下载成功但文件大小为 0: {downloaded_path}", extra=log_extra)
-                _safe_remove_file_sync(downloaded_path, trace_id) # 删除空文件
+                self._safe_remove_file_sync(downloaded_path, trace_id) # 删除空文件
                 raise AudioDownloadError(f"下载的文件为空: {url}")
 
             # 6. 成功返回路径
@@ -754,21 +760,21 @@ class ScriptService:
         except requests.exceptions.HTTPError as e:
             error_msg = f"下载失败 (HTTP Status {e.response.status_code})"
             logger.error(f"{error_msg} from {url}", extra=log_extra)
-            _cleanup_dir_sync(download_dir, trace_id) # 清理目录
+            self._cleanup_dir_sync(download_dir, trace_id) # 清理目录
             raise AudioDownloadError(error_msg) from e
         except requests.exceptions.RequestException as e:
             error_msg = f"下载失败 (Request Error): {type(e).__name__}"
             logger.error(f"{error_msg} from {url}", extra=log_extra)
-            _cleanup_dir_sync(download_dir, trace_id) # 清理目录
+            self._cleanup_dir_sync(download_dir, trace_id) # 清理目录
             raise AudioDownloadError(error_msg) from e
         except AudioDownloadError as e: # 捕获并重新抛出内部定义的错误
             # 可能已经在内部记录过日志，这里可以选择是否补充日志
-            _cleanup_dir_sync(download_dir, trace_id) # 确保清理
+            self._cleanup_dir_sync(download_dir, trace_id) # 确保清理
             raise e
         except Exception as e:
             error_msg = f"下载过程中发生未知异常: {type(e).__name__}"
             logger.error(f"{error_msg} from {url}", exc_info=True, extra=log_extra)
-            _cleanup_dir_sync(download_dir, trace_id) # 清理目录
+            self._cleanup_dir_sync(download_dir, trace_id) # 清理目录
             raise AudioDownloadError(error_msg) from e
 
         finally:
@@ -781,11 +787,11 @@ class ScriptService:
 
     # --- 新增的同步方法 (供 Celery 调用) ---
 
-    def download_audio_sync(self, url: str, trace_id: str) -> Tuple[str, str]:
+    def download_audio_sync(self, url: str, trace_id: str,root_trace_key:str) -> Tuple[str, str]:
         """[同步执行] 下载音频并返回文件路径和标题"""
-        log_extra = {"request_id": trace_id} # 使用传入的 trace_id
+        log_extra = {"request_id": trace_id,"root_trace_key":root_trace_key} # 使用传入的 trace_id
         logger.info(f"[Sync] 开始下载音频: {url}", extra=log_extra)
-        download_dir = os.path.join(self.temp_dir, f"audio_{int(time.time())}_{trace_id[-6:]}")
+        download_dir = os.path.join(settings.SHARED_TEMP_DIR, f"audio_{int(time.time())}_{trace_id[-6:]}")
         os.makedirs(download_dir, exist_ok=True)
         outtmpl = os.path.join(download_dir, "%(title)s.%(ext)s")
         # yt-dlp 本身是阻塞的，可以直接在同步方法中使用
@@ -831,13 +837,33 @@ class ScriptService:
             self._cleanup_dir(download_dir, trace_id) # 确保清理
             raise AudioDownloadError(error_msg) from e
 
-    def transcribe_audio_sync(self, audio_path: str, trace_id: str) -> str:
+
+    @cache_result_sync(
+        expire_seconds = 1800,
+        prefix="transcribe_audio_sync_",
+        key_args=['original_url'] # 缓存不应依赖这些请求上下文变量
+    )
+    def transcribe_audio_sync(self, media_url_to_download:str, platform:str ,original_url: str,audio_path: str, trace_id: str) -> str:
         """[同步执行] 将音频转写为文本"""
         log_extra = {"request_id": trace_id}
-        if not os.path.exists(audio_path):
-            raise AudioTranscriptionError(f"音频文件不存在: {audio_path}")
 
-        logger.info(f"[Sync] 开始转写音频: {audio_path}", extra=log_extra)
+        if not os.path.exists(audio_path):
+            logger.info(f"[Transcribe Audio {trace_id=}] 音频文件不存在: {audio_path}", extra=log_extra)
+            if not media_url_to_download:
+                raise AudioTranscriptionError(f"音频文件不存在: {audio_path} 并且 media_url_to_download 为空")
+            
+            from bot_api_v1.app.constants.media_info import MediaPlatform
+            if platform == MediaPlatform.DOUYIN:
+                audio_path= self.download_media_sync(media_url_to_download,trace_id)
+            else:
+                # 对于其他平台使用通用下载方法
+                audio_path, _ = self.download_audio_sync(media_url_to_download, trace_id)
+            
+            if not audio_path or not os.path.exists(audio_path):  # 检查路径有效性
+                raise AudioDownloadError("transcribe_audio_sync----下载服务未返回有效路径或文件不存在")
+
+
+        logger.info(f"[Sync] 开始转写音频: {audio_path},original_url is {original_url}", extra=log_extra)
         start_time = time.time()
         text = ""
         temp_chunk_paths = [] # 用于分块清理
@@ -850,39 +876,16 @@ class ScriptService:
             except Exception as load_e:
                 raise AudioTranscriptionError(f"无法加载音频文件: {os.path.basename(audio_path)}") from load_e
 
-            logger.info(f"[Sync] 音频时长: {audio_duration:.2f}秒", extra=log_extra)
-            
-            # !! 注意：积分检查和消耗逻辑已移出 !!
-            
+            logger.info(f"[Sync] 音频时长: {audio_duration:.2f}秒", extra=log_extra)            
             model = self._get_whisper_model() # 获取模型 (内部有锁)
 
-            # --- 执行 Whisper 转写 ---
-            # model.transcribe 是 CPU/GPU 密集型操作，是阻塞的，可以直接调用
-            # 它内部可能使用多线程，但对调用者来说是同步的
-            
-            # !! 这里需要复现 transcribe_audio 中的分块逻辑 (如果是长音频) !!
-            # !! 或者简单起见，先假设只处理短音频或 transcribe 支持长音频 !!
-            
-            # 简化版：直接调用（你需要根据 transcribe_audio 完整实现）
-            if audio_duration <= 3000: # 假设5分钟以内直接处理
-                logger.info("[Sync] 音频时长小于5分钟，直接转写", extra=log_extra)
-                # 调用 Whisper (这是阻塞操作)
-                # **注意 ScriptService._thread_pool 的使用**: 
-                # transcribe_audio 原实现使用了线程池提交任务并等待结果。
-                # 在同步方法中，我们可以直接调用 model.transcribe，或者如果想利用
-                # 那个线程池，也可以 submit + result() 来阻塞等待。
-                # 直接调用 model.transcribe 通常更简单。
-                # 我们需要确认 model.transcribe 是否线程安全，Whisper 通常是的。
-                # 暂时直接调用，不使用 ScriptService._thread_pool
+            # 临时设置50分钟
+            if audio_duration <= 3000: 
+                logger.info("[Sync] 音频时长小于50分钟，直接转写", extra=log_extra)
                 
-                # --- 激活转写锁 (保持和原来一致) ---
-                # with ScriptService._transcription_lock: 
-                logger.info("[Sync] 获取转写锁并执行转写...", extra=log_extra)
                 result = model.transcribe(audio_path, language="zh", task="transcribe", fp16=False)
                 text = result.get("text", "").strip()
                 logger.info("[Sync] 转写完成.", extra=log_extra)
-                # --- 释放锁 ---
-
             else:
                  # !! 需要在这里实现长音频的分块、并行处理（如果需要）和合并逻辑 !!
                  # 这会比较复杂，需要将 transcribe_audio 中的分块和线程池逻辑
@@ -896,7 +899,6 @@ class ScriptService:
             logger.info(f"[Sync] 音频转写完成，耗时: {elapsed_time:.2f}秒", extra=log_extra)
             
             return {"status": "success", "text": text, "audio_duration": audio_duration}
-
         except AudioTranscriptionError as ate:
             raise ate # 直接抛出已知错误
         except Exception as e:
@@ -905,7 +907,36 @@ class ScriptService:
             raise AudioTranscriptionError(error_msg) from e
         finally:
             # 清理逻辑保持不变，使用 self._safe_remove_file / _cleanup_dir
-            logger.debug(f"[Sync] 开始清理临时文件...", extra=log_extra)
-            # ... (调用清理函数) ...
-            # if os.path.exists(audio_path): self._safe_remove_file(audio_path, trace_id)
-            pass # Placeholder for cleanup
+            logger.debug(f"开始清理临时文件和目录: {temp_chunk_paths}", extra={"request_id": trace_id})
+            paths_to_clean = sorted(temp_chunk_paths, key=lambda p: os.path.isfile(p), reverse=True)
+            for path_to_clean in paths_to_clean:
+                if os.path.isfile(path_to_clean):
+                    self._safe_remove_file(path_to_clean, trace_id)
+                elif os.path.isdir(path_to_clean):
+                    self._cleanup_dir(path_to_clean, trace_id)
+
+            if os.path.exists(audio_path) and os.path.isfile(audio_path):
+                 is_temp_chunk = False
+                 for temp_dir in filter(os.path.isdir, temp_chunk_paths):
+                     try:
+                        # Use os.path.commonpath on normalized paths for robust check
+                        norm_audio_path = os.path.normpath(audio_path)
+                        norm_temp_dir = os.path.normpath(temp_dir)
+                        if os.path.commonpath([norm_audio_path, norm_temp_dir]) == norm_temp_dir:
+                             is_temp_chunk = True
+                             break
+                     except ValueError: # Paths might be on different drives etc.
+                         pass
+                 if not is_temp_chunk:
+                     self._safe_remove_file(audio_path, trace_id)
+                 else:
+                     logger.debug(f"跳过删除原始文件，因为它是一个临时分块: {audio_path}", extra={"request_id": trace_id})
+
+            self._cleanup_parent_dir(audio_path, trace_id)
+            if torch.cuda.is_available():
+                 try:
+                     torch.cuda.empty_cache()
+                     logger.debug("已调用 torch.cuda.empty_cache()", extra={"request_id": trace_id})
+                 except Exception as cuda_e:
+                     logger.warning(f"调用 torch.cuda.empty_cache() 时出错: {cuda_e}", extra={"request_id": trace_id})
+            gc.collect()

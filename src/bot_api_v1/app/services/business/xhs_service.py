@@ -609,13 +609,14 @@ class XHSService:
         extract_text: bool, 
         # --- 替代 request_ctx 的参数 ---
         user_id_for_points: str, # 假设用于积分或日志
-        trace_id: str
+        trace_id: str,
+        root_trace_key: str
     ) -> dict:
         """
         [同步执行] 获取小红书笔记信息，并可选提取文本。
         为 Celery Task 设计，不依赖 request_ctx，不写数据库。
         """
-        log_extra = {"request_id": trace_id, "user_id": user_id_for_points}
+        log_extra = {"request_id": trace_id, "user_id": user_id_for_points,"root_trace_key": root_trace_key}
         logger.info(f"[Sync XHS] 开始获取笔记信息: {url}, extract_text={extract_text}", extra=log_extra)
         
         if not SPIDER_XHS_LOADED:

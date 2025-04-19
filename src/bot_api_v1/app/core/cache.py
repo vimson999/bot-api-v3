@@ -4,7 +4,7 @@ import functools
 import hashlib
 import json
 import time
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional, Union
 from datetime import datetime, timedelta
 import logging # <-- 添加了顶层导入
 
@@ -117,13 +117,12 @@ def get_redis_client():
     return _redis_client_cache
 
 # --- 同步 Redis 缓存装饰器 (添加了调试日志) ---
-def cache_result_sync(expire_seconds=86400, prefix="celery_cache", skip_args=None):
+def cache_result_sync(expire_seconds=86400, prefix="celery_cache", key_args=None):
     """
     [同步] 缓存函数结果到 Redis 的装饰器。
     为 Celery Task 或其他同步函数设计。
     """
-    skip_args = skip_args or []
-
+    key_args = key_args or []
     def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
@@ -135,19 +134,16 @@ def cache_result_sync(expire_seconds=86400, prefix="celery_cache", skip_args=Non
             force_refresh = kwargs.pop('force_refresh', False)
             method_name = func.__qualname__
             
-            # 假设第一个位置参数是主要 Key (e.g., url)
-            key_arg = args[0] if args else kwargs.get('url', kwargs.get('id'))
-            if key_arg is None: # 如果无法确定主要 key，则不缓存
+            if key_args is None: # 如果无法确定主要 key，则不缓存
                  logger.warning(f"无法确定缓存键的关键参数 (args[0] 或 kwargs 'url'/'id')，跳过缓存: {method_name}")
                  return func(*args, **kwargs)
                  
-            cache_key_parts = [method_name, str(key_arg)]
-
-            # 过滤并序列化 kwargs
+            cache_key_parts = [prefix]
             filtered_kwargs = {
                 k: v for k, v in kwargs.items()
-                if k not in skip_args and k not in ['url', 'id', 'force_refresh']
+                if k in key_args
             }
+
             if filtered_kwargs:
                 try:
                     kwargs_str = json.dumps(filtered_kwargs, sort_keys=True, default=str)
@@ -161,7 +157,7 @@ def cache_result_sync(expire_seconds=86400, prefix="celery_cache", skip_args=Non
             # 打印用于生成哈希的完整字符串
             logger.debug(f"用于生成缓存键的原始字符串 (Pre-hash): '{cache_key_str}'") 
             # 打印参与计算的关键部分，帮助对比
-            logger.debug(f"缓存键参数详情: method='{method_name}', key_arg='{str(key_arg)}', filtered_kwargs={filtered_kwargs}")
+            logger.debug(f"缓存键参数详情: prefix='{prefix}', key_args='{str(key_args)}',filtered_kwargs is {filtered_kwargs}")
             # !! --- 结束添加的调试日志 --- !!
             
             hashed_key = hashlib.md5(cache_key_str.encode()).hexdigest()
@@ -218,3 +214,106 @@ def cache_result_sync(expire_seconds=86400, prefix="celery_cache", skip_args=Non
                  raise func_exc
         return wrapper
     return decorator
+
+
+
+
+# --- 重构的Redis缓存操作函数 ---
+class RedisCache:
+    """Redis缓存操作的统一接口类"""
+    
+    @staticmethod
+    def create_key(prefix: str, value: str) -> str:
+        """创建缓存键"""
+        hashed_key = hashlib.md5(value.encode()).hexdigest()
+        return f"{prefix}:{hashed_key}"
+    
+    @staticmethod
+    def get(key: str) -> Optional[dict]:
+        """从Redis获取缓存值并解析JSON"""
+        redis_client = get_redis_client()
+        if not redis_client:
+            logger.warning("Redis客户端不可用，无法获取缓存")
+            return None
+            
+        try:
+            value_str = redis_client.get(key)
+            if not value_str:
+                return None
+                
+            return json.loads(value_str)
+        except json.JSONDecodeError:
+            logger.error(f"解析Redis缓存数据失败 ({key})", exc_info=True)
+            try: 
+                redis_client.delete(key)
+            except Exception:
+                pass
+            return None
+        except Exception as e:
+            logger.error(f"从Redis获取缓存时发生错误: {e}", exc_info=True)
+            return None
+    
+    @staticmethod
+    def set(key: str, value: Union[dict, list], expire_seconds: int = 1800) -> bool:
+        """将值存储到Redis缓存"""
+        redis_client = get_redis_client()
+        if not redis_client:
+            logger.warning("Redis客户端不可用，无法设置缓存")
+            return False
+            
+        try:
+            value_str = json.dumps(value, default=str)
+            redis_client.setex(key, expire_seconds, value_str)
+            logger.debug(f"数据已缓存: Key={key}, 过期时间={expire_seconds}秒")
+            return True
+        except TypeError as e:
+            logger.error(f"序列化数据到JSON失败: {e}", exc_info=True)
+            return False
+        except Exception as e:
+            logger.error(f"存储数据到Redis缓存失败 ({key}): {e}", exc_info=True)
+            return False
+
+# def get_from_sync_cache(key):
+#     redis_client = get_redis_client()
+#     return redis_client.get(key)
+
+# def create_key(prefix:str, original_url:str):
+#     hashed_key = hashlib.md5(original_url.encode()).hexdigest()
+#     full_cache_key = f"{prefix}:{hashed_key}"
+#     return full_cache_key
+
+# def create_task_b_result_sync_cache(url:str,task_b_final_result:dict):
+#     redis_client = get_redis_client()
+#     full_cache_key = create_key("get_task_b_result",url)
+#     expire_seconds = 60 * 30
+    
+#     value_to_cache_str = json.dumps(task_b_final_result, default=str)
+#     redis_client.setex(full_cache_key, expire_seconds, value_to_cache_str)
+
+
+# --- 重构的缓存操作函数 ---
+def get_task_result_from_cache(url: str, prefix: str = "get_task_b_result") -> Optional[dict]:
+    """从缓存获取任务结果"""
+    cache_key = RedisCache.create_key(prefix, url)
+    logger.debug(f"尝试从缓存获取任务结果: {cache_key}")
+    return RedisCache.get(cache_key)
+
+def save_task_result_to_cache(url: str, result: dict, prefix: str = "get_task_b_result", expire_seconds: int = 1800) -> bool:
+    """保存任务结果到缓存"""
+    if not isinstance(result, dict):
+        logger.warning(f"无法缓存非字典类型的结果: {type(result)}")
+        return False
+        
+    cache_key = RedisCache.create_key(prefix, url)
+    logger.debug(f"保存任务结果到缓存: {cache_key}")
+    return RedisCache.set(cache_key, result, expire_seconds)
+
+# 为了向后兼容，保留原有函数但使用新实现
+def create_key(prefix: str, original_url: str) -> str:
+    return RedisCache.create_key(prefix, original_url)
+
+def get_from_sync_cache(key: str) -> Optional[dict]:
+    return RedisCache.get(key)
+
+def create_task_b_result_sync_cache(url: str, task_b_final_result: dict, expire_seconds: int = 1800) -> bool:
+    return save_task_result_to_cache(url, task_b_final_result, expire_seconds=expire_seconds)

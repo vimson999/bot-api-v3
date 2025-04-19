@@ -298,6 +298,9 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
         return True
     
     try:
+        root_trace_key = request_ctx.get_root_trace_key()
+        trace_key = request_ctx.get_trace_key()
+
         # 查询用户积分账户
         stmt = select(MetaUserPoints).where(
             and_(
@@ -307,7 +310,7 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
         )
         result = await db.execute(stmt)
         points_account = result.scalar_one_or_none()
-        
+
         # 如果用户没有积分账户，创建一个
         if not points_account:
             logger.info(f"用户积分账户不存在，正在创建: {user_id}")
@@ -326,11 +329,21 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
             await db.commit()
             await db.refresh(points_account)
             
-            logger.info_to_db(f"已创建用户积分账户: {points_account.id}")
+            logger.info_to_db(f"已创建用户积分账户: {points_account.id}",
+                extra={
+                    "request_id": trace_key,
+                    "root_trace_key": root_trace_key
+                }
+            )
             
             # 如果账户余额为0，提示用户充值
             error_msg = "您的积分账户余额为0，请先充值后再使用服务"
-            logger.info_to_db(error_msg)
+            logger.info_to_db(error_msg,
+                extra={
+                    "request_id": trace_key,
+                    "root_trace_key": root_trace_key
+                }
+            )
             if not exempt:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -341,7 +354,13 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
         # 如果账户余额为0，提示用户充值
         if points_account.available_points <= 0:
             error_msg = "您的积分账户余额不足，请先充值后再使用服务"
-            logger.info_to_db(error_msg)
+            logger.info_to_db(error_msg,
+                extra={
+                    "request_id": trace_key,
+                    "root_trace_key": root_trace_key
+                }
+            )
+
             if not exempt:
                 raise HTTPException(
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
@@ -356,7 +375,13 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
             user_id=str(user_id)
         )
         
-        logger.info_to_db(f"用户积分账户正常: ID={points_account.id}, 可用积分={points_account.available_points}")
+        logger.info_to_db(f"用户积分账户正常: ID={points_account.id}, 可用积分={points_account.available_points}",
+            extra={
+                "request_id": trace_key,
+                "root_trace_key": root_trace_key
+            }
+        )
+
         return False
         
     except HTTPException:
@@ -392,10 +417,17 @@ async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: R
     available_points = points_info.get('available_points', 0)
     user_id = points_info.get('user_id')
     api_name = points_info.get('api_name', "未知API")
+    root_trace_key = request_ctx.get_root_trace_key()
+    trace_key = request_ctx.get_trace_key()
     
     # 如果没有积分消耗或缺少账户ID，跳过处理
     if not consumed_points or not account_id or not user_id:
-        logger.info_to_db(f"无需扣减积分: consumed_points={consumed_points}, account_id={account_id}")
+        logger.info_to_db(f"无需扣减积分: consumed_points={consumed_points}, account_id={account_id}",
+            extra={
+                "request_id": trace_key,
+                "root_trace_key": root_trace_key
+            }
+        )
         return False
     
     # 不能消耗超过用户可用积分
@@ -502,7 +534,12 @@ async def _update_user_points(db: AsyncSession, key_obj: MetaAuthKey, request: R
                 )
                 db.add(transaction)
         
-        logger.info_to_db(f"积分扣减成功: 用户 {user_id}, 消耗 {consumed_points} 积分, 剩余 {available_points - consumed_points} 可用积分")
+        logger.info_to_db(f"积分扣减成功: 用户 {user_id}, 消耗 {consumed_points} 积分, 剩余 {available_points - consumed_points} 可用积分",
+            extra={
+                "request_id": trace_key,
+                "root_trace_key": root_trace_key
+            }
+        )
         return True
         
     except SQLAlchemyError as e:

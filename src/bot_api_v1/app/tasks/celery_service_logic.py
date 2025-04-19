@@ -10,7 +10,7 @@ import os
 import asyncio # 用于 run_async_in_sync (如果 celery_service_logic 需要)
 
 # !! 导入新的同步缓存装饰器 !!
-from bot_api_v1.app.core.cache import cache_result_sync 
+from bot_api_v1.app.core.cache import cache_result_sync
 from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.tasks.celery_tiktok_service import CeleryTikTokService, TikTokError, InitializationError,VideoFetchError # 新的 TikTok 服务
 
@@ -20,7 +20,7 @@ SPIDER_XHS_LOADED = True
 @cache_result_sync(
     expire_seconds=settings.CACHE_EXPIRATION or 1800, 
     prefix="celery_media_extract_sync", # 统一前缀或分开？暂时统一
-    skip_args=['trace_id', 'user_id', 'app_id'] 
+    key_args=['url', 'extract_text', 'platform'] 
 )
 def execute_media_extraction_sync(
     url: str,
@@ -29,13 +29,14 @@ def execute_media_extraction_sync(
     platform: str,
     user_id: str, 
     trace_id: str, 
-    app_id: str   
+    app_id: str   ,
+    root_trace_key: str
 ) -> dict:
     """
     [同步执行] 分发器：根据平台调用对应的 Service 的同步方法。
     应用缓存装饰器。
     """
-    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id}
+    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id,"root_trace_key": root_trace_key}
     logger.info(f"[Sync Logic Dispatcher {trace_id=}] 分发任务: platform={platform}, url={url}", extra=log_extra)
 
     try:
@@ -48,7 +49,8 @@ def execute_media_extraction_sync(
                 url=url, 
                 extract_text=extract_text, 
                 user_id_for_points=user_id, 
-                trace_id=trace_id
+                trace_id=trace_id,
+                root_trace_key=root_trace_key
             )
         elif platform == MediaPlatform.DOUYIN:
             # --- 调用新的 CeleryTikTokService 的同步方法 ---
@@ -59,7 +61,8 @@ def execute_media_extraction_sync(
                 url=url, 
                 extract_text=extract_text,
                 user_id_for_points=user_id,
-                trace_id=trace_id
+                trace_id=trace_id,
+                root_trace_key=root_trace_key
             )
         else:
             raise MediaError(f"不支持的媒体平台: {platform}")
@@ -85,9 +88,9 @@ def execute_media_extraction_sync(
 
 # --- 1. 获取基础媒体信息 (适用于 Task A - extract_text=False) ---
 @cache_result_sync(
-    expire_seconds=settings.CACHE_EXPIRATION or 1800,
+    expire_seconds = 1800,
     prefix="fetch_basic_media",
-    skip_args=['trace_id', 'user_id', 'app_id'] # 缓存不应依赖这些请求上下文变量
+    key_args=['platform', 'url'] # 缓存不应依赖这些请求上下文变量
 )
 def fetch_basic_media_info(
     platform: str,
@@ -95,14 +98,15 @@ def fetch_basic_media_info(
     include_comments: bool, # 注意：可能只对特定平台有意义
     user_id: str,
     trace_id: str,
-    app_id: str
+    app_id: str,
+    root_trace_key: str
 ) -> dict:
     """
     [同步执行] 只获取媒体的基础信息 (元数据, URL等), 不下载文件, 不转写。
     应用缓存。
     """
-    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id, "logic_step": "fetch_basic"}
-    logger.info(f"[Fetch Basic {trace_id=}] 开始获取基础信息: platform={platform}, url={url}", extra=log_extra)
+    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id, "logic_step": "fetch_basic","root_trace_key": root_trace_key}
+    logger.info_to_db(f"[Fetch Basic {trace_id=}] 开始获取基础信息: platform={platform}, url={url}", extra=log_extra)
 
     base_cost = 10 # 假设基础信息固定成本
     media_data = None
@@ -154,7 +158,7 @@ def fetch_basic_media_info(
         if media_data is None: # 双重检查
              raise MediaError("未能获取任何媒体数据")
 
-        logger.info(f"[Fetch Basic {trace_id=}] 基础信息获取成功. Platform={platform}", extra=log_extra)
+        logger.info_to_db(f"[Fetch Basic {trace_id=}] 基础信息获取成功. Platform={platform}, url={url},basicinfo is {media_data}", extra=log_extra)
         return {"status": "success", "data": media_data, "points_consumed": base_cost}
 
     # --- 统一错误处理 ---
@@ -178,14 +182,15 @@ def prepare_media_for_transcription(
     include_comments: bool,
     user_id: str,
     trace_id: str,
-    app_id: str
+    app_id: str,
+    root_trace_key: str
 ) -> dict:
     """
     [同步执行] 获取媒体基础信息，并下载需要转写的音频文件到共享路径。
     不执行转写。
     """
-    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id, "logic_step": "prepare_transcription"}
-    logger.info(f"[Prepare Transcription {trace_id=}] 开始准备阶段: platform={platform}, url={url}", extra=log_extra)
+    log_extra = {"request_id": trace_id, "user_id": user_id, "app_id": app_id, "logic_step": "prepare_transcription","root_trace_key": root_trace_key}
+    logger.info_to_db(f"[Prepare Transcription {trace_id=}] 开始准备阶段: platform={platform}, url={url}", extra=log_extra)
 
     audio_path = None
     media_url_to_download = None
@@ -197,7 +202,8 @@ def prepare_media_for_transcription(
         include_comments=include_comments,
         user_id=user_id,
         trace_id=trace_id,
-        app_id=app_id
+        app_id=app_id,
+        root_trace_key=root_trace_key
     )
 
     if basic_info_result.get("status") != "success":
@@ -229,7 +235,8 @@ def prepare_media_for_transcription(
         }
 
     try:
-        # 根据平台获取合适的下载链接
+        # 'transcribe_audio_sync_:{"original_url": "https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed"}'
+        media_url_to_download = None
         if platform == MediaPlatform.XIAOHONGSHU:
             media_url_to_download = basic_info_data.get("media", {}).get("video_url")
         elif platform == MediaPlatform.DOUYIN:
@@ -242,26 +249,32 @@ def prepare_media_for_transcription(
             logger.error(f"[Prepare Transcription {trace_id=}] 未能在基础信息中找到有效的视频/音频下载链接", extra=log_extra)
             return {"status": "failed", "error": "无法找到下载链接", "data": {"basic_info": basic_info_data}, "points_consumed": base_points_consumed}
 
-        # 3. 下载音频文件
+
+        audio_path = None
+        go_cache = False
+        # if exists_in_cache('transcribe_audio_sync_',url):
+        #     go_cache = True
+        #     logger.info_to_db(f"[Prepare Transcription {trace_id=}] ，task B缓存还有效，理论上无需下载音频文件", extra=log_extra)
+        # else:# 根据平台获取合适的下载链接
+            # 3. 下载音频文件
         logger.info(f"[Prepare Transcription {trace_id=}] 开始下载音频文件从: {media_url_to_download}", extra=log_extra)
         script_service = ScriptService()  # 实例化下载/转写服务
         
         # 根据平台选择不同的下载方法
         if platform == MediaPlatform.DOUYIN:
-            audio_path= script_service.download_media_sync(media_url_to_download,trace_id)
+            audio_path= script_service.download_media_sync(media_url_to_download,trace_id,root_trace_key)
         else:
             # 对于其他平台使用通用下载方法
-            audio_path, _ = script_service.download_audio_sync(media_url_to_download, trace_id)
+            audio_path, _ = script_service.download_audio_sync(media_url_to_download, trace_id,root_trace_key)
         
         if not audio_path or not os.path.exists(audio_path):  # 检查路径有效性
             raise AudioDownloadError("下载服务未返回有效路径或文件不存在")
         
-        logger.info(f"[Prepare Transcription {trace_id=}] 音频文件下载成功: {audio_path}", extra=log_extra)
-    
+        logger.info_to_db(f"[Prepare Transcription {trace_id=}] 音频文件下载成功: {audio_path}", extra=log_extra)
         # 准备成功
         return {
             "status": "success",
-            "data": {"basic_info": basic_info_data, "audio_path": audio_path},
+            "data": {"basic_info": basic_info_data, "audio_path": audio_path, "media_url_to_download":media_url_to_download,"go_cache":go_cache},
             "points_consumed": base_points_consumed  # 准备阶段只计算基础积分
         }
 

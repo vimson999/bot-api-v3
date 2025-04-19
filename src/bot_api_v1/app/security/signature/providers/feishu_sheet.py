@@ -229,7 +229,13 @@ def rsa_verify_sign(data, sign_data, public_key, debug=False):
         
         duration = time.time() - start_time
         if valid:
-            logger.info_to_db(f"[{trace_id}] 签名验证成功!，data is {data},sign data is {sign_data} ,耗时: {duration:.4f}秒")
+            root_trace_key = request_ctx.get_root_trace_key()
+            logger.info_to_db(f"[{trace_id}] 签名验证成功!，data is {data},sign data is {sign_data} ,耗时: {duration:.4f}秒",
+                extra={
+                    "request_id": trace_id,
+                    "root_trace_key": root_trace_key
+                }
+            )
         else:
             logger.warning(f"[{trace_id}] 签名验证失败! ，data is {data},sign data is {sign_data} ,耗时: {duration:.4f}秒")
             

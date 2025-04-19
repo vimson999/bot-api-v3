@@ -50,6 +50,7 @@ class MediaExtractSubmitResponse(BaseModel):
     code: int = 202
     message: str
     task_id: str
+    root_trace_key: str
     request_context: RequestContext
 
 class MediaExtractResponse(BaseModel): # 复用或重命名旧的响应模型
@@ -64,6 +65,7 @@ class MediaExtractStatusResponse(BaseModel):
     code: int
     message: str
     task_id: str
+    root_trace_key: str
     status: str # PENDING, running, completed, failed, cancelled, ...
     result: Optional[MediaContentResponse] = None # 任务成功时的结果
     data: Optional[MediaContentResponse] = None # MediaContentResponse 需已定义
@@ -131,12 +133,13 @@ async def extract_media_content_smart(
     user_id = request_ctx.get_cappa_user_id()
     user_name = request_ctx.get_user_name()
     ip_address = request.client.host if request.client else "unknown_ip"
+    root_trace_key = request_ctx.get_root_trace_key()
 
     request_context = RequestContext(
         trace_id=trace_key, app_id=app_id, source=source, user_id=user_id,
         user_name=user_name, ip=ip_address, timestamp=datetime.now()
     )
-    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id}
+    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id,"root_trace_key":root_trace_key}
 
     logger.info_to_db(
         f"接收媒体提取请求(Smart) begin: url={extract_request.url}, extract_text={extract_request.extract_text}",
@@ -195,7 +198,8 @@ async def extract_media_content_smart(
                     platform,
                     user_id,
                     trace_key, # 传递 trace_id
-                    app_id   # 传递 app_id
+                    app_id,   # 传递 app_id
+                    root_trace_key
                     # 如果需要，传递积分信息: initial_points_info=...
                 ),
                 task_type="media_extraction" # 可以指定队列
@@ -210,6 +214,7 @@ async def extract_media_content_smart(
                 code=202,
                 message="提取任务已提交，正在后台处理中。",
                 task_id=task_id,
+                root_trace_key=root_trace_key,
                 request_context=request_context
             )
             # 需要使用 Response 类来设置正确的状态码
@@ -232,6 +237,8 @@ async def task_A_running():
     response_message = "任务正在处理中..."
 
     return final_task_status, response_status_code, response_message
+
+
 
 @router.get(
     "/extract/status/{task_id}",
@@ -260,7 +267,8 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
         user_id = request_ctx.get_cappa_user_id()
         user_name = request_ctx.get_user_name()
         ip_address = request.client.host if request.client else "unknown_ip"
-        log_extra = {"request_id": trace_key, "celery_task_id": task_id, "user_id": user_id}
+        root_trace_key = request_ctx.get_root_trace_key()
+        log_extra = {"request_id": trace_key, "celery_task_id": task_id, "user_id": user_id,"root_trace_key":root_trace_key}
     except Exception as ctx_err:
         # 如果连上下文都获取失败，记录严重错误并返回
         logger.critical(f"获取请求上下文失败: {ctx_err}", exc_info=True)
@@ -321,26 +329,19 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
                  task_A_internal_status = result_A_data.get('status')
 
                  if task_A_internal_status == 'success':
-                     # Task A 直接成功完成 (例如 extract_text=False)
                      final_task_status = "completed"
-                     media_data_dict = result_A_data.get("data")
+                     final_combined_data = result_A_data.get("data")
                      points_consumed = result_A_data.get("points_consumed", 0)
-                     response_message = result_A_data.get("message", "任务成功完成")
                      try:
-                         # 转换并验证 Pydantic 模型
-                        #  if media_data_dict:
-                        #      media_data_dict = MediaService.convert_to_standard_format(media_data_dict)
-                        #      response_data = MediaContentResponse(**media_data_dict)
-
-                         response_data = media_data_dict
-                         request_ctx.set_consumed_points(points_consumed) # 设置积分
-                         # await deduct_points(...)
+                        response_data = MediaContentResponse(**final_combined_data) if final_combined_data else None
+                        response_message = result_A_data.get("message", "提取和转写成功完成")
+                        request_ctx.set_consumed_points(points_consumed)
+                        response_status_code = status.HTTP_200_OK
                      except Exception as parse_err:
-                         logger.error(f"解析 Task A ({task_id}) 直接成功结果失败: {parse_err}", exc_info=True, extra=log_extra)
-                         final_task_status = "failed"
-                         response_error_msg = f"任务成功但结果解析失败: {parse_err}"
-                         response_message = response_error_msg
-
+                        logger.error(f"从Task A ({task_id}) 成功结果直接拉取时，失败: {parse_err}", exc_info=True, extra=log_extra)
+                        final_task_status = "failed"
+                        response_error_msg = f"task A任务成功,但结果拉取时解析失败: {parse_err}"
+                        response_message = response_error_msg
                  elif task_A_internal_status == 'processing':
                      # Task A 成功触发 Task B，需要查询 Task B
                      final_task_status = "transcribing" # 初始为转写中
@@ -348,7 +349,6 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
                      response_message = "正在进行语音转写..."
 
                      task_b_id = result_A_data.get('transcription_task_id')
-                    #  basic_info = result_A_data.get('basic_info')
                      base_points = result_A_data.get('base_points', 10)
 
                      if task_b_id :
@@ -450,6 +450,7 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
         code=200 if final_task_status == "completed" else (202 if final_task_status in ["running", "transcribing"] else 500), # 映射业务状态码
         message=response_message,
         task_id=task_id,
+        root_trace_key=root_trace_key,
         status=final_task_status, # 使用处理后的最终状态字符串
         data=response_data, # 成功时的数据
         error=response_error_msg if final_task_status == "failed" else None, # 失败时的错误信息
