@@ -387,6 +387,10 @@ nohup pip install -r requirements.txt > install.log 2>&1 &
 tail -f install.log
 
 
+pip install --trusted-host pypi.tuna.tsinghua.edu.cn -r requirements.txt
+
+
+
 # 在项目根目录创建.env文件
 echo "DATABASE_URL=postgresql+asyncpg://cappa_rw:RWcappaDb!!!2025@10.0.16.12:5432/cappadocia_v1" > .env
 echo 'DATABASE_URL=postgresql+asyncpg://cappa_rw:RWcappaDb!!!2025@10.0.16.12:5432/cappa_p_v1' > .env
@@ -679,12 +683,12 @@ git submodule add https://github.com/vimson999/Spider_XHS.git src/bot_api_v1/lib
 git submodule update --init --recursive
 
 
-
 cat src/bot_api_v1/libs/spider_xhs/requirements.txt >> requirements.txt
 pip install -r requirements.txt
 
 cd src/bot_api_v1/libs/spider_xhs
 npm install
+npm install jsdom --save
 
 
 git submodule add https://github.com/vimson999/TikTokDownloader.git src/bot_api_v1/libs/tiktok_downloader
@@ -698,6 +702,7 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 pip install -r src/bot_api_v1/libs/spider_xhs/requirements.txt
 pip install -r src/bot_api_v1/libs/tiktok_downloader/requirements.txt
+
 
 https://www.douyin.com/video/7475254041207950642
 https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed
@@ -749,3 +754,43 @@ celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q transcripti
 celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q logging  -P solo -n task_log
 
 /Users/v9/Documents/workspace/v9/code/bot-api-v1/venv/bin/python -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --workers=4 --loop=uvloop --http=httptools
+/Users/v9/Documents/3---work/06---dev---python/bot-api-v1/bot_api_v1/venv/bin/python -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --workers=4 --loop=uvloop --http=httptools
+
+
+
+export PYTHONPATH="/Users/v9/Documents/3---work/06---dev---python/bot-api-v1/bot_api_v1/src:$PYTHONPATH"
+venv/bin/python -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --workers=4 --loop=uvloop --http=httptools
+venv/bin/python -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --loop=uvloop --http=httptools
+
+
+
+
+
+
+
+
+# 在您的项目根目录执行
+mkdir -p src/bot_api_v1/libs
+git submodule add https://github.com/vimson999/Spider_XHS.git src/bot_api_v1/libs/spider_xhs
+git submodule update --init --recursive
+
+cat src/bot_api_v1/libs/spider_xhs/requirements.txt >> requirements.txt
+pip install -r requirements.txt
+
+cd src/bot_api_v1/libs/spider_xhs
+npm install
+npm install jsdom --save
+
+git submodule add https://github.com/vimson999/TikTokDownloader.git src/bot_api_v1/libs/tiktok_downloader
+git submodule update --init --recursive
+
+cat src/bot_api_v1/libs/tiktok_downloader/requirements.txt >> requirements.txt
+pip install -r requirements.txt
+
+pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+
+export PYTHONPATH="/Users/v9/Documents/3---work/06---dev---python/bot-api-v1/bot_api_v1/src:$PYTHONPATH"
+
+nvm install --lts
+npm --version
+nvm alias default 22.14.0

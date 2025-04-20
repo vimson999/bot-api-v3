@@ -388,6 +388,8 @@ class TikTokService:
                     raise VideoFetchError(f"Failed to process data for video ID: {video_id}")
                 
                 result = processed_data[0]
+                # 基础信息获取成功，即使不提取文案，也需要消耗基础积分
+                request_ctx.set_consumed_points(total_required, "基础信息获取成功")
                 logger.info(f"Successfully fetched info for video: {result.get('desc', 'Untitled')}")
                 
                 # 提取视频文案（如果需要）
