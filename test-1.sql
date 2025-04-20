@@ -739,6 +739,9 @@ export CELERY_RESULT_BACKEND='redis://localhost:6379/1'
 export CACHE_REDIS_URL='redis://localhost:6379/2' 
 
 
+git push https://vim999:b5ff334e279b324f74a78c9d5d67c046@gitee.com/vim999/bot_api_v1.git master
+
+
 
 
 celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q celery,media_extraction -P solo -n task_A
