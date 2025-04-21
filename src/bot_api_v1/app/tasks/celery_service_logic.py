@@ -148,6 +148,27 @@ def fetch_basic_media_info(
                 )
                 if media_data is None: # 检查返回值
                      raise TikTokError("未能获取抖音基础信息 (内部方法返回 None)")
+        
+            finally:
+                 if tiktok_service:
+                     tiktok_service.close_sync() # 确保资源被清理
+                     
+        elif platform == MediaPlatform.TIKTOK:
+            tiktok_service = None
+            try:
+                tiktok_service = CeleryTikTokService() # 实例化服务 (包含初始化和清理)
+                extract_text=True
+                # 调用内部封装好的同步获取基础信息的方法
+                # 这个方法内部处理了在线程池中运行异步代码的逻辑
+                media_data = tiktok_service.get_basic_video_info_sync_internal(
+                    url=url,
+                    extract_text=extract_text,
+                    user_id_for_points=user_id,
+                    trace_id=trace_id
+                )
+                if media_data is None: # 检查返回值
+                     raise TikTokError("未能获取TikTok基础信息 (内部方法返回 None)")
+        
             finally:
                  if tiktok_service:
                      tiktok_service.close_sync() # 确保资源被清理

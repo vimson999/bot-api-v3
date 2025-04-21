@@ -76,11 +76,13 @@ class Settings(BaseSettings):
     # --- 新增 Celery 配置 ---
     CELERY_BROKER_URL: str = os.getenv(
         "CELERY_BROKER_URL", 
-        "redis://:login4RDS!!!@101.35.56.140:6379/0" 
+        # "redis://:login4RDS!!!@101.35.56.140:6379/0" 
+        "redis://:login4RDS!!!@10.0.16.12:6379/0" 
     )
     CELERY_RESULT_BACKEND: str = os.getenv(
         "CELERY_RESULT_BACKEND", 
-        "redis://:login4RDS!!!@101.35.56.140:6379/1" 
+        # "redis://:login4RDS!!!@101.35.56.140:6379/1" 
+        "redis://:login4RDS!!!@10.0.16.12:6379/1" 
     )
     CELERY_TASK_SERIALIZER: str = os.getenv("CELERY_TASK_SERIALIZER", "json")
     CELERY_RESULT_SERIALIZER: str = os.getenv("CELERY_RESULT_SERIALIZER", "json")

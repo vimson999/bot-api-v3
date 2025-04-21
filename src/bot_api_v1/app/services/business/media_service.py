@@ -14,6 +14,7 @@ from bot_api_v1.app.services.business.xhs_service import XHSService
 class MediaPlatform:
     """媒体平台枚举"""
     DOUYIN = "douyin"
+    TIKTOK = "tiktok"
     XIAOHONGSHU = "xiaohongshu"
     UNKNOWN = "unknown"
 
