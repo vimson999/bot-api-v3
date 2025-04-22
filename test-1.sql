@@ -700,6 +700,9 @@ pip install -r requirements.txt
 pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
 
 
+nohup pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt > install.log 2>&1 &
+tail -f install.log
+
 pip install -r src/bot_api_v1/libs/spider_xhs/requirements.txt
 pip install -r src/bot_api_v1/libs/tiktok_downloader/requirements.txt
 
@@ -778,6 +781,7 @@ cat src/bot_api_v1/libs/spider_xhs/requirements.txt >> requirements.txt
 pip install -r requirements.txt
 
 cd src/bot_api_v1/libs/spider_xhs
+apt install npm
 npm install
 npm install jsdom --save
 
@@ -794,3 +798,7 @@ export PYTHONPATH="/Users/v9/Documents/3---work/06---dev---python/bot-api-v1/bot
 nvm install --lts
 npm --version
 nvm alias default 22.14.0
+
+
+
+
