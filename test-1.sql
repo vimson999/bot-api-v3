@@ -798,3 +798,7 @@ export PYTHONPATH="/Users/v9/Documents/3---work/06---dev---python/bot-api-v1/bot
 nvm install --lts
 npm --version
 nvm alias default 22.14.0
+
+
+
+
