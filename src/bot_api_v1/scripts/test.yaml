@@ -1,0 +1,72 @@
+auth_enabled: false # 禁用认证
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+# 添加此部分以禁用需要 schema v13 / tsdb 索引的新特性
+limits_config:
+  allow_structured_metadata: false
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /var/loki # Loki 数据存储的基础目录
+  storage:
+    filesystem:
+      chunks_directory: /var/loki/chunks # chunks 存储目录
+      rules_directory: /var/loki/rules # ruler 规则存储目录 (如果使用 ruler)
+  replication_factor: 1 # 单实例模式
+  ring:
+    kvstore:
+      store: inmemory # 使用内存作为 ring 的 kvstore (单实例适用)
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2020-10-24 # 定义 schema 生效时间
+      store: boltdb-shipper # 使用的索引存储类型
+      object_store: filesystem # 使用的对象存储 (chunks) 类型
+      schema: v11 # 使用的 schema 版本
+      index:
+        prefix: index_ # 索引文件前缀
+        period: 24h # 索引分片周期
+
+ruler:
+  # 如果使用 Loki 进行告警，需要配置 Alertmanager 地址
+  alertmanager_url: http://localhost:9093
+
+# Ingester 配置 (单体模式)
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+  # wal (Write Ahead Log) 和 chunk 相关配置可以使用默认值或按需调整
+  # chunk_idle_period: 1h
+  # chunk_target_size: 1048576
+  # max_chunk_age: 1h
+
+# Distributor 配置 (单体模式)
+distributor:
+  ring:
+    kvstore:
+      store: inmemory
+
+# Compactor 配置 (使用 boltdb-shipper 或开启 retention 时必需)
+compactor:
+  working_directory: /var/loki/compactor # Compactor 工作目录
+  compaction_interval: 10m # 压缩间隔
+  retention_enabled: true # 启用基于时间的保留策略
+  retention_delete_delay: 2h # 保留期过后，延迟多久才删除数据
+  # retention_delete_worker_count: 150     # 删除工作线程数 (可选, 可用默认值)
+  delete_request_store: # 前面 2 空格
+    filesystem: # 前面 4 空格
+      directory: /var/loki/delete-requests # 前面 6 空格
