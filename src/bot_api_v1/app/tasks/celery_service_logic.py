@@ -73,7 +73,7 @@ def execute_media_extraction_sync(
     # 捕获所有可能的服务层异常
     except (XHSError, TikTokError, MediaError, InitializationError) as e: 
         error_msg = f"处理失败 ({type(e).__name__}): {str(e)}"
-        logger.error(f"[Sync Logic Dispatcher {trace_id=}] {error_msg}", extra=log_extra, exc_info=False)
+        logger.error(f"[Sync Logic Dispatcher {trace_id=}] {error_msg}", extra=log_extra, exc_info=True)
         return {"status": "failed", "error": error_msg, "points_consumed": 0}
     except Exception as e: 
         error_msg = f"分发或执行时发生意外错误: {str(e)}"
@@ -185,7 +185,7 @@ def fetch_basic_media_info(
     # --- 统一错误处理 ---
     except (XHSError, TikTokError, MediaError, InitializationError, VideoFetchError) as e:
         error_msg = f"获取基础信息失败 ({type(e).__name__}): {str(e)}"
-        logger.error(f"[Fetch Basic {trace_id=}] {error_msg}", extra=log_extra, exc_info=False)
+        logger.error(f"[Fetch Basic {trace_id=}] {error_msg}", extra=log_extra, exc_info=True)
         return {"status": "failed", "error": error_msg, "points_consumed": 0}
     except Exception as e:
         error_msg = f"获取基础信息时发生意外错误: {str(e)}"

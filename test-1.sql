@@ -690,6 +690,12 @@ cd src/bot_api_v1/libs/spider_xhs
 npm install
 npm install jsdom --save
 
+？的bug
+需要注意npm nodejs的版本要大于18
+
+TypeError: Cannot read properties of undefined (reading 'call')
+
+
 
 git submodule add https://github.com/vimson999/TikTokDownloader.git src/bot_api_v1/libs/tiktok_downloader
 git submodule update --init --recursive
@@ -765,7 +771,10 @@ export PYTHONPATH="/Users/v9/Documents/3---work/06---dev---python/bot-api-v1/bot
 venv/bin/python -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --workers=4 --loop=uvloop --http=httptools
 venv/bin/python -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --loop=uvloop --http=httptools
 
-
+# 确保你在项目目录中
+cd /code/bot_api
+# 设置Python路径
+export PYTHONPATH=$PWD/src:$PYTHONPATH
 
 
 
@@ -800,5 +809,10 @@ npm --version
 nvm alias default 22.14.0
 
 
+# 确保你在项目目录中
+cd /code/bot_api
+# 设置Python路径
+export PYTHONPATH=$PWD/src:$PYTHONPATH
 
 
+2025-04-24 10:32:08 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [531bfaa3-95b2-4a62-be92-396e796bb7f0] | ERROR    | bot_api_v1.app.core.logger:error | [Fetch Basic trace_id='531bfaa3-95b2-4a62-be92-396e796bb7f0'] 获取基础信息失败 (XHSError): 获取小红书笔记API失败: TypeError: Cannot read properties of undefined (reading 'call')
