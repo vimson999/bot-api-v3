@@ -816,3 +816,16 @@ export PYTHONPATH=$PWD/src:$PYTHONPATH
 
 
 2025-04-24 10:32:08 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [531bfaa3-95b2-4a62-be92-396e796bb7f0] | ERROR    | bot_api_v1.app.core.logger:error | [Fetch Basic trace_id='531bfaa3-95b2-4a62-be92-396e796bb7f0'] 获取基础信息失败 (XHSError): 获取小红书笔记API失败: TypeError: Cannot read properties of undefined (reading 'call')
+2025-04-24 13:17:47 | --- | - | - | - | - | [system] | ERROR    | bot_api_v1.app.core.logger:error | generate_xray_traceid------生成xray traceid失败: TypeError: Cannot read properties of undefined (reading 'call')
+
+2025-04-24 13:17:56 | --- | - | - | - | - | [e8ec91da-de06-4868-bac6-d1acb45da0ce] | INFO     | bot_api_v1.app.core.logger:info | [Transcribe Audio trace_id='e8ec91da-de06-4868-bac6-d1acb45da0ce'] 音频文件不存在: /srv/nfs/shared/audio_1745471867_5da0ce/1040g2so31ff2fkfemoe04a6d63bqo0e1t6mb7s0.mp4
+/srv/nfs/shared/audio_1745471867_5da0ce/
+1040g2so31ff2fkfemoe04a6d63bqo0e1t6mb7s0.mp4
+
+sudo supervisorctl restart all
+
+sudo supervisorctl restart fastapi_app
+sudo supervisorctl restart celery_worker_A
+sudo supervisorctl restart celery_worker_log
+
+sudo supervisorctl status

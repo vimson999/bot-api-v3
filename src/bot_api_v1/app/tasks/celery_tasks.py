@@ -1,6 +1,7 @@
 # bot_api_v1/app/tasks/celery_tasks.py
 import time
 import sys  # 确保导入sys模块
+from bot_api_v1.app.core.config import settings
 from datetime import datetime
 from bot_api_v1.app.core.logger import logger
 from celery.exceptions import Retry, MaxRetriesExceededError
@@ -9,6 +10,7 @@ from bot_api_v1.app.services.business.media_service import MediaService,MediaPla
 from pydub import AudioSegment
 from bot_api_v1.app.services.business.points_service import PointsService
 from bot_api_v1.app.core.cache import get_task_result_from_cache, save_task_result_to_cache
+import os
 
 
 # 导入 celery_app 实例
@@ -362,6 +364,15 @@ def run_transcription_task(self,
         return {"status": "failed", "error": msg, "points_consumed": 0}
 
     logger.info(f"[Task B {task_id=}] V3 先检查积分部分，用户{user_id}需要{total_required}积分，积分充足{user_available_points}...", extra=log_extra)
+
+
+    logger.info(f"转写前地址 audio_path is : {audio_path}", extra=log_extra)
+    #audio_path 要进行转写,将地址从nfs服务端地址中提取文件名字,跟nfs客户端挂载地址拼接到一起
+    if audio_path:
+        file_name = os.path.basename(audio_path)
+        audio_path = os.path.join(settings.SHARED_MNT_DIR, file_name)
+    logger.info(f"转写后地址 audio_path is : {audio_path}", extra=log_extra)
+    
 
     transcription_result_dict = {} # 用于存储最终结果
     try:

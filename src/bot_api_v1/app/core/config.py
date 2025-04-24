@@ -61,6 +61,8 @@ class Settings(BaseSettings):
 
     WHISPER_MODEL: str = os.getenv("WHISPER_MODEL", "base")
     SHARED_TEMP_DIR : str = os.getenv("SHARED_TEMP_DIR", "/Users/v9/Downloads/nfs")
+    SHARED_MNT_DIR : str = os.getenv("SHARED_MNT_DIR", "/Users/v9/Downloads/nfs")
+
 
     # 缓存设置
     REDIS_URL: Optional[str] = os.getenv("REDIS_URL") # 这个可用于通用 Redis 缓存
