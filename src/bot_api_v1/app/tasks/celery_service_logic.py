@@ -119,7 +119,7 @@ def fetch_basic_media_info(
             logger.debug("[Fetch Basic XHS] 调用 xhs_apis.get_note_info...", extra=log_extra)
             success, msg, note_data_raw = xhs_service.xhs_apis.get_note_info(url, xhs_service.cookies_str)
             if not success or not note_data_raw:
-                raise XHSError(f"获取小红书笔记API失败: {msg}")
+                raise XHSError(f"获取小红书笔记API失败--get_note_info--: {msg}")
             # 解析和转换格式 (同步)
             try:
                 # 添加原始 URL 到原始数据中，方便后续处理
