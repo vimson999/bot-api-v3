@@ -10,6 +10,7 @@ from bot_api_v1.app.services.business.media_service import MediaService,MediaPla
 from pydub import AudioSegment
 from bot_api_v1.app.services.business.points_service import PointsService
 from bot_api_v1.app.core.cache import get_task_result_from_cache, save_task_result_to_cache
+from bot_api_v1.app.utils.media_extrat_format import Media_extract_format
 import os
 from pathlib import Path  # 推荐使用 pathlib 处理路径
 
@@ -200,7 +201,7 @@ def create_douyin_schema(
     transcribed_text: str,
     audio_duration: int
 ):
-    _media_service = MediaService()
+    media_extract_format = Media_extract_format()
     basic_info = basic_info.get("data", {})  # 提取 video 字段
     info = {
         "platform": platform,
@@ -209,7 +210,7 @@ def create_douyin_schema(
         "title": basic_info.get("desc", ""),
         "description": basic_info.get("desc", ""),
         "content": transcribed_text,
-        "tags": _media_service._extract_tags_from_douyin(basic_info),
+        "tags": media_extract_format._extract_tags_from_douyin(basic_info),
         
         "author": {
             "id": basic_info.get("uid", ""),  # 直接从顶层获取
@@ -240,7 +241,7 @@ def create_douyin_schema(
             "quality": "normal"
         },
         
-        "publish_time": _media_service._format_timestamp(basic_info.get("create_timestamp", 0)),
+        "publish_time": media_extract_format._format_timestamp(basic_info.get("create_timestamp", 0)),
         "update_time": None
     }
 
@@ -254,7 +255,7 @@ def create_xhs_schema(
     transcribed_text: str,
     audio_duration: int
 ):
-    media_service = MediaService()
+    media_extract_format = Media_extract_format()
     info = {
         "platform": platform,
         "video_id": basic_info.get("note_id", ""),
@@ -293,8 +294,8 @@ def create_xhs_schema(
             "quality": "normal"
         },
         
-        "publish_time": media_service._format_timestamp(basic_info.get("create_time", 0)),
-        "update_time": media_service._format_timestamp(basic_info.get("last_update_time", 0))
+        "publish_time": media_extract_format._format_timestamp(basic_info.get("create_time", 0)),
+        "update_time": media_extract_format._format_timestamp(basic_info.get("last_update_time", 0))
     }
 
     return info

@@ -841,3 +841,32 @@ Details: [Errno 13] Permission denied: '/srv/nfs'
 
 
 2025-04-24 16:06:03 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [f61115f8-7802-4329-9c12-0f2dc00ac5c4] | ERROR    | bot_api_v1.app.core.logger:error | [Task B task_id='79a1e73f-0f1b-4b6b-b8f5-801fdd45f809'] 格式化最终结果时出错: [Errno 13] Permission denied: '/srv/nfs'
+2025-04-24 17:16:14 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [9a8421f2-1f1e-41c4-a188-a3b4032d55c5] | ERROR    | bot_api_v1.app.core.logger:error | [Task B task_id='5b8ca85d-8d5a-4edd-a1cf-9bef428bcb97'] 格式化最终结果时出错: [Errno 13] Permission denied: '/srv/nfs'
+
+
+[Task B task_id='5b8ca85d-8d5a-4edd-a1cf-9bef428bcb97'] 格式化最终结果时出错: [Errno 13] Permission denied: '/srv/nfs'
+
+Details: [Errno 13] Permission denied: '/srv/nfs'
+
+Traceback:
+Traceback (most recent call last):
+  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/tasks/celery_tasks.py", line 432, in run_transcription_task
+    final_standard_data = create_schema(
+                          ^^^^^^^^^^^^^^
+  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/tasks/celery_tasks.py", line 315, in create_schema
+    final_standard_data = create_xhs_schema(platform, basic_info, url, transcribed_text,audio_duration)
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/tasks/celery_tasks.py", line 257, in create_xhs_schema
+    media_service = MediaService()
+                    ^^^^^^^^^^^^^^
+  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/services/business/media_service.py", line 31, in __init__
+    self.tiktok_service = TikTokService()
+                          ^^^^^^^^^^^^^^^
+  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/services/business/tiktok_service.py", line 121, in __init__
+    self.script_service = ScriptService()
+                          ^^^^^^^^^^^^^^^
+  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/services/business/script_service.py", line 61, in __init__
+    os.makedirs(self.temp_dir, exist_ok=True)
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [Errno 13] Permission denied: '/srv/nfs'
