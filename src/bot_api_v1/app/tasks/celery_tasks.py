@@ -11,6 +11,7 @@ from pydub import AudioSegment
 from bot_api_v1.app.services.business.points_service import PointsService
 from bot_api_v1.app.core.cache import get_task_result_from_cache, save_task_result_to_cache
 import os
+from pathlib import Path  # 推荐使用 pathlib 处理路径
 
 
 # 导入 celery_app 实例
@@ -317,6 +318,49 @@ def create_schema(
 
     return final_standard_data
 
+
+def get_audio_path(audio_path, log_extra):
+    logger.info(f"转写前地址 audio_path is : {audio_path}", extra=log_extra)
+    if audio_path:
+        try:
+            server_base_path_str = settings.SHARED_TEMP_DIR  # NFS 服务端共享的基础路径
+            client_mount_point_str = settings.SHARED_MNT_DIR # 从设置读取客户端挂载点
+
+            if not client_mount_point_str:
+                logger.error("Client mount point (settings.SHARED_MNT_DIR) not configured!", extra=log_extra)
+                # 根据你的错误处理逻辑，可能需要 return 或 raise exception
+                # audio_path = None # 或者设为 None，让后续逻辑处理
+            else:
+                server_base_path = Path(server_base_path_str)
+                full_server_path = Path(audio_path)
+                client_mount_point = Path(client_mount_point_str)
+
+                # 计算相对于 NFS 服务端基础路径的相对路径
+                # 例如: full_server_path = /srv/nfs/shared/subdir/file.mp4
+                #       server_base_path = /srv/nfs/shared
+                #       relative_path will be "subdir/file.mp4"
+                relative_path = full_server_path.relative_to(server_base_path)
+
+                # 将相对路径拼接到客户端挂载点上
+                # 例如: client_mount_point = /mnt/nfs_audio
+                #       relative_path = subdir/file.mp4
+                #       client_path will be /mnt/nfs_audio/subdir/file.mp4
+                client_path = client_mount_point / relative_path
+
+                # 将 Path 对象转换回字符串，以便后续可能需要字符串路径的代码使用
+                audio_path = str(client_path)
+
+                logger.info(f"转写后地址 audio_path is : {audio_path}", extra=log_extra)
+
+                return audio_path
+        except ValueError as e:
+            # 如果 full_server_path 不是 server_base_path 的子路径，relative_to 会抛出 ValueError
+            logger.error(f"Path translation error: {audio_path} is not relative to {server_base_path_str}. Error: {e}", extra=log_extra)
+            audio_path = None # 标记路径无效
+        except Exception as e:
+            logger.error(f"Unexpected error during path translation for {audio_path}: {e}", extra=log_extra)
+            audio_path = None # 标记路径无效
+        logger.info(f"转写后地址 audio_path is : {audio_path}", extra=log_extra)
 # --- 修改后的转写任务 (Task B) ---
 @celery_app.task(
     name="tasks.run_transcription", # Task B
@@ -365,15 +409,7 @@ def run_transcription_task(self,
 
     logger.info(f"[Task B {task_id=}] V3 先检查积分部分，用户{user_id}需要{total_required}积分，积分充足{user_available_points}...", extra=log_extra)
 
-
-    logger.info(f"转写前地址 audio_path is : {audio_path}", extra=log_extra)
-    #audio_path 要进行转写,将地址从nfs服务端地址中提取文件名字,跟nfs客户端挂载地址拼接到一起
-    if audio_path:
-        file_name = os.path.basename(audio_path)
-        audio_path = os.path.join(settings.SHARED_MNT_DIR, file_name)
-    logger.info(f"转写后地址 audio_path is : {audio_path}", extra=log_extra)
-    
-
+    audio_path = get_audio_path(audio_path, log_extra)
     transcription_result_dict = {} # 用于存储最终结果
     try:
         script_service = ScriptService()
