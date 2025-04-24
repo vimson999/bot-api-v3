@@ -28,6 +28,7 @@ try:
         prepare_media_for_transcription,
     )
     from bot_api_v1.app.services.business.script_service import ScriptService, AudioTranscriptionError
+    from bot_api_v1.app.services.business.script_service_sync import ScriptService_Sync
 except ImportError as e:
     #  logger.error(f"无法导入重构后的 celery_service_logic 函数, 错误信息: {e}")
      logger.error("无法导入重构后的 celery_service_logic 函数", exc_info=True)
@@ -412,9 +413,9 @@ def run_transcription_task(self,
     audio_path = get_audio_path(audio_path, log_extra)
     transcription_result_dict = {} # 用于存储最终结果
     try:
-        script_service = ScriptService()
+        script_service_sync = ScriptService_Sync()
         # 1. 执行转写
-        transcription_result_dict = script_service.transcribe_audio_sync(
+        transcription_result_dict = script_service_sync.transcribe_audio_sync(
             original_url=url,
             media_url_to_download=media_url_to_download,
             platform=platform,
@@ -454,19 +455,19 @@ def run_transcription_task(self,
                     logger.error(f"[Task B {task_id=}] 保存转写结果到缓存时出错: {e}", exc_info=True, extra=log_extra)
 
                 return task_b_final_result
-            except Exception :
-                 logger.error(f"[Task B {task_id=}] 格式化最终结果时出错: {format_err}", exc_info=True, extra=log_extra)
-                 # 格式化失败，也算 Task B 失败
-                 error_message = f"任务成功但结果格式化失败: {format_err}"
-                 failure_result = {
+            except Exception as format_err:
+                logger.error(f"[Task B {task_id=}] 格式化最终结果时出错: {format_err}", exc_info=True, extra=log_extra)
+                # 格式化失败，也算 Task B 失败
+                error_message = f"任务成功但结果格式化失败: {format_err}"
+                failure_result = {
                     "status": "failed",
                     "error": error_message,
                     "original_basic_info": basic_info, # 返回原始信息
                     "platform": platform,
                     "transcription_result": transcription_result_dict # 返回原始转写结果
-                 }
-                 self.update_state(state='FAILURE', meta=failure_result)
-                 return failure_result
+                }
+                self.update_state(state='FAILURE', meta=failure_result)
+                return failure_result
         else:
             error_message = transcription_result_dict.get("error", "转写失败，未知原因")
             logger.error(f"[Task B {task_id=}] 转写失败: {error_message}", extra=log_extra)
