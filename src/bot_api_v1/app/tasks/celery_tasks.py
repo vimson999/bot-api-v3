@@ -457,14 +457,16 @@ def run_transcription_task(self,
                 return task_b_final_result
             except Exception as format_err:
                 logger.error(f"[Task B {task_id=}] 格式化最终结果时出错: {format_err}", exc_info=True, extra=log_extra)
-                # 格式化失败，也算 Task B 失败
                 error_message = f"任务成功但结果格式化失败: {format_err}"
                 failure_result = {
                     "status": "failed",
                     "error": error_message,
-                    "original_basic_info": basic_info, # 返回原始信息
+                    "original_basic_info": basic_info,
                     "platform": platform,
-                    "transcription_result": transcription_result_dict # 返回原始转写结果
+                    "transcription_result": transcription_result_dict,
+                    "exc_type": type(format_err).__name__,
+                    "exc_message": str(format_err),
+                    "exc_module": type(format_err).__module__
                 }
                 self.update_state(state='FAILURE', meta=failure_result)
                 return failure_result
