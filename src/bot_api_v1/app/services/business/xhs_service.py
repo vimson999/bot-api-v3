@@ -140,6 +140,8 @@ class XHSService:
             if not self.base_path or not isinstance(self.base_path, dict):
                 # 确保base_path有效
                 self.base_path = {"media": str(ROOT_DIR / "downloads")}
+
+            logger.info(f"小红书初始化成功，NODE_PATH is : {os.environ["NODE_PATH"]}")
         except Exception as e:
             logger.warning(f"小红书初始化失败: {str(e)}")
             self.base_path = {"media": str(ROOT_DIR / "downloads")}
