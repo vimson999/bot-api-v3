@@ -815,13 +815,6 @@ cd /code/bot_api
 export PYTHONPATH=$PWD/src:$PYTHONPATH
 
 
-2025-04-24 10:32:08 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [531bfaa3-95b2-4a62-be92-396e796bb7f0] | ERROR    | bot_api_v1.app.core.logger:error | [Fetch Basic trace_id='531bfaa3-95b2-4a62-be92-396e796bb7f0'] 获取基础信息失败 (XHSError): 获取小红书笔记API失败: TypeError: Cannot read properties of undefined (reading 'call')
-2025-04-24 13:17:47 | --- | - | - | - | - | [system] | ERROR    | bot_api_v1.app.core.logger:error | generate_xray_traceid------生成xray traceid失败: TypeError: Cannot read properties of undefined (reading 'call')
-
-2025-04-24 13:17:56 | --- | - | - | - | - | [e8ec91da-de06-4868-bac6-d1acb45da0ce] | INFO     | bot_api_v1.app.core.logger:info | [Transcribe Audio trace_id='e8ec91da-de06-4868-bac6-d1acb45da0ce'] 音频文件不存在: /srv/nfs/shared/audio_1745471867_5da0ce/1040g2so31ff2fkfemoe04a6d63bqo0e1t6mb7s0.mp4
-/srv/nfs/shared/audio_1745471867_5da0ce/
-1040g2so31ff2fkfemoe04a6d63bqo0e1t6mb7s0.mp4
-
 sudo supervisorctl restart all
 
 sudo supervisorctl restart fastapi_app
@@ -832,41 +825,3 @@ sudo supervisorctl status
 
 sudo supervisorctl restart celery_whisper_worker
 sudo supervisorctl status
-
-2025-04-24 14:20:20 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [aff54a58-1348-4430-a331-ed71871a5edc] | INFO     | bot_api_v1.app.core.logger:info | 转写后地址 audio_path is : /mnt/nfs_audio/audio_1745475553_1a5edc/1040g2so31ff2fkfemoe04a6d63bqo0e1t6mb7s0.mp4
-
-[Task B task_id='d02b9863-bb42-4cf6-bc27-17886c72918e'] 转写时发生顶层错误: [Errno 13] Permission denied: '/srv/nfs'
-
-Details: [Errno 13] Permission denied: '/srv/nfs'
-
-
-2025-04-24 16:06:03 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [f61115f8-7802-4329-9c12-0f2dc00ac5c4] | ERROR    | bot_api_v1.app.core.logger:error | [Task B task_id='79a1e73f-0f1b-4b6b-b8f5-801fdd45f809'] 格式化最终结果时出错: [Errno 13] Permission denied: '/srv/nfs'
-2025-04-24 17:16:14 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [9a8421f2-1f1e-41c4-a188-a3b4032d55c5] | ERROR    | bot_api_v1.app.core.logger:error | [Task B task_id='5b8ca85d-8d5a-4edd-a1cf-9bef428bcb97'] 格式化最终结果时出错: [Errno 13] Permission denied: '/srv/nfs'
-
-
-[Task B task_id='5b8ca85d-8d5a-4edd-a1cf-9bef428bcb97'] 格式化最终结果时出错: [Errno 13] Permission denied: '/srv/nfs'
-
-Details: [Errno 13] Permission denied: '/srv/nfs'
-
-Traceback:
-Traceback (most recent call last):
-  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/tasks/celery_tasks.py", line 432, in run_transcription_task
-    final_standard_data = create_schema(
-                          ^^^^^^^^^^^^^^
-  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/tasks/celery_tasks.py", line 315, in create_schema
-    final_standard_data = create_xhs_schema(platform, basic_info, url, transcribed_text,audio_duration)
-                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/tasks/celery_tasks.py", line 257, in create_xhs_schema
-    media_service = MediaService()
-                    ^^^^^^^^^^^^^^
-  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/services/business/media_service.py", line 31, in __init__
-    self.tiktok_service = TikTokService()
-                          ^^^^^^^^^^^^^^^
-  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/services/business/tiktok_service.py", line 121, in __init__
-    self.script_service = ScriptService()
-                          ^^^^^^^^^^^^^^^
-  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/services/business/script_service.py", line 61, in __init__
-    os.makedirs(self.temp_dir, exist_ok=True)
-  File "<frozen os>", line 215, in makedirs
-  File "<frozen os>", line 225, in makedirs
-PermissionError: [Errno 13] Permission denied: '/srv/nfs'
