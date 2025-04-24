@@ -52,7 +52,7 @@ class ScriptService:
                  whisper_model: str = settings.WHISPER_MODEL,
                  max_parallel_chunks: int = 4,
                  chunk_duration: int = 60):
-        self.temp_dir = settings.SHARED_TEMP_DIR
+        self.temp_dir = settings.SHARED_MNT_DIR
         # self.temp_dir = temp_dir or tempfile.gettempdir()
         self.whisper_model_name = whisper_model
         self.max_parallel_chunks = max_parallel_chunks
@@ -625,7 +625,7 @@ class ScriptService:
 
 
 
-    BASE_TEMP_DIR = getattr(settings, 'SHARED_TEMP_DIR', '/tmp/shared_media_temp')
+    BASE_TEMP_DIR = getattr(settings, 'SHARED_MNT_DIR', '/tmp/shared_media_temp')
     def _safe_remove_file_sync(self,file_path: str, trace_id: Optional[str] = None):
         """同步安全删除文件"""
         log_extra = {"request_id": trace_id or "cleanup"}
@@ -791,7 +791,7 @@ class ScriptService:
         """[同步执行] 下载音频并返回文件路径和标题"""
         log_extra = {"request_id": trace_id,"root_trace_key":root_trace_key} # 使用传入的 trace_id
         logger.info(f"[Sync] 开始下载音频: {url}", extra=log_extra)
-        download_dir = os.path.join(settings.SHARED_TEMP_DIR, f"audio_{int(time.time())}_{trace_id[-6:]}")
+        download_dir = os.path.join(settings.SHARED_MNT_DIR, f"audio_{int(time.time())}_{trace_id[-6:]}")
         os.makedirs(download_dir, exist_ok=True)
         outtmpl = os.path.join(download_dir, "%(title)s.%(ext)s")
         # yt-dlp 本身是阻塞的，可以直接在同步方法中使用

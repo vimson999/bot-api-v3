@@ -829,3 +829,23 @@ sudo supervisorctl restart celery_worker_A
 sudo supervisorctl restart celery_worker_log
 
 sudo supervisorctl status
+
+sudo supervisorctl restart celery_whisper_worker
+sudo supervisorctl status
+
+2025-04-24 14:20:20 | --- | - | debug_pack_id_1743324375692 | d554d4a3-838c-498d-8da6-ff136e774f77 | - | [aff54a58-1348-4430-a331-ed71871a5edc] | INFO     | bot_api_v1.app.core.logger:info | 转写后地址 audio_path is : /mnt/nfs_audio/audio_1745475553_1a5edc/1040g2so31ff2fkfemoe04a6d63bqo0e1t6mb7s0.mp4
+
+[Task B task_id='d02b9863-bb42-4cf6-bc27-17886c72918e'] 转写时发生顶层错误: [Errno 13] Permission denied: '/srv/nfs'
+
+Details: [Errno 13] Permission denied: '/srv/nfs'
+
+Traceback:
+Traceback (most recent call last):
+  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/tasks/celery_tasks.py", line 415, in run_transcription_task
+    script_service = ScriptService()
+                     ^^^^^^^^^^^^^^^
+  File "/code/bot_app/bot_api_v1/src/bot_api_v1/app/services/business/script_service.py", line 61, in __init__
+    os.makedirs(self.temp_dir, exist_ok=True)
+  File "<frozen os>", line 215, in makedirs
+  File "<frozen os>", line 225, in makedirs
+PermissionError: [Errno 13] Permission denied: '/srv/nfs'
