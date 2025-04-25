@@ -192,6 +192,11 @@ async def extract_media_content_smart(
             if platform == MediaPlatform.UNKNOWN:
                  raise HTTPException(status_code=400, detail=f"无法识别或不支持的URL平台: {cleaned_url}")
 
+            task_type = "media_extraction"
+            if platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.TIKTOK or platform == MediaPlatform.INSTAGRAM or platform == MediaPlatform.TWITTER:
+                # 不支持的平台
+                task_type = "bad_news"
+
             # !! 调用 celery_adapter 提交新任务 !!
             task_id = register_task(
                 name=f"extract_media_{user_id}_{cleaned_url[:20]}",
@@ -207,7 +212,8 @@ async def extract_media_content_smart(
                     root_trace_key
                     # 如果需要，传递积分信息: initial_points_info=...
                 ),
-                task_type="media_extraction" # 可以指定队列
+                # task_type="media_extraction" # 可以指定队列
+                task_type=task_type
             )
 
             if not task_id:

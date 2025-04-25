@@ -773,7 +773,7 @@ git push https://vim999:b5ff334e279b324f74a78c9d5d67c046@gitee.com/vim999/bot_ap
 
 
 
-
+celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q celery,bad_news -P solo -n task_bad_news
 celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q celery,media_extraction -P solo -n task_A
 celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q transcription -P solo -n task_B
 celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q logging  -P solo -n task_log

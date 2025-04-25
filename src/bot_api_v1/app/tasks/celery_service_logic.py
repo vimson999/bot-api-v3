@@ -179,9 +179,13 @@ def fetch_basic_media_info(
                 logger.error(f"[Fetch Basic {trace_id=}] 获取Bilibili基础信息失败，url={url}", extra=log_extra)
                 raise MediaError("未能获取Bilibili基础信息 (内部方法返回 None)")
 
-        elif platform == MediaPlatform.INSTAGRAM or platform == MediaPlatform.YOUTUBE:
-            # 对于其他平台，暂时不支持
-            pass
+        elif platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.TIKTOK or platform == MediaPlatform.INSTAGRAM or platform == MediaPlatform.TWITTER:
+            yt_dlp_service = YtDLP_Service_Sync()
+            media_data = yt_dlp_service.get_basic_info(trace_id, url, log_extra)
+
+            if media_data is None:
+                logger.error(f"[Fetch Basic {trace_id=}] 获取{platform}基础信息失败，url={url}", extra=log_extra)
+                raise MediaError(f"未能获取B{platform}基础信息 (内部方法返回 None)")
         else:
             raise MediaError(f"不支持的媒体平台: {platform}")
 
