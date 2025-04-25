@@ -5,40 +5,15 @@ from bot_api_v1.app.core.config import settings
 from datetime import datetime
 from bot_api_v1.app.core.logger import logger
 from celery.exceptions import Retry, MaxRetriesExceededError
-from celery.result import AsyncResult # 保留导入，虽然在此文件中可能不用了
-from bot_api_v1.app.services.business.media_service import MediaService,MediaPlatform
 from pydub import AudioSegment
 from bot_api_v1.app.services.business.points_service import PointsService
 from bot_api_v1.app.core.cache import get_task_result_from_cache, save_task_result_to_cache
 from bot_api_v1.app.utils.media_extrat_format import Media_extract_format
-import os
+from bot_api_v1.app.constants.media_info import MediaPlatform
 from pathlib import Path  # 推荐使用 pathlib 处理路径
-
-
-# 导入 celery_app 实例
-try:
-    from .celery_app import celery_app
-except ImportError:
-    logger.error("无法导入 celery_app...", exc_info=True)
-    raise
-
-# !! 导入重构后的服务逻辑函数 !!
-try:
-    from bot_api_v1.app.tasks.celery_service_logic import (
-        fetch_basic_media_info,
-        prepare_media_for_transcription,
-    )
-    from bot_api_v1.app.services.business.script_service import ScriptService, AudioTranscriptionError
-    from bot_api_v1.app.services.business.script_service_sync import ScriptService_Sync
-except ImportError as e:
-    #  logger.error(f"无法导入重构后的 celery_service_logic 函数, 错误信息: {e}")
-     logger.error("无法导入重构后的 celery_service_logic 函数", exc_info=True)
-     # 定义假的函数以便加载
-     def fetch_basic_media_info(*args, **kwargs): return {"status":"failed", "error":"Logic not loaded"}
-     def prepare_media_for_transcription(*args, **kwargs): return {"status":"failed", "error":"Logic not loaded"}
-     class ScriptService:
-         def transcribe_audio_sync(self, *args, **kwargs): return {"status":"failed", "error":"Service not loaded"}
-
+from bot_api_v1.app.tasks.celery_service_logic import prepare_media_for_transcription
+from bot_api_v1.app.services.business.script_service_sync import ScriptService_Sync
+from bot_api_v1.app.tasks.celery_app import celery_app
 
 # --- 保留之前的示例任务 (可选) ---
 @celery_app.task(name="tasks.add")
@@ -61,8 +36,6 @@ def print_message(message):
     processed_msg = f"消息 '{message}' 已处理。"
     return processed_msg
 
-
-
 def check_user_available_points_by_audio(
     audio_duration: int,
     user_id: str,
@@ -81,7 +54,6 @@ def check_user_available_points_by_audio(
     
     return total_required,user_available_points
 
-
 def get_task_b_result(origin_url:str): 
     return get_task_result_from_cache(origin_url)
 
@@ -97,16 +69,17 @@ def get_task_b_result(origin_url:str):
     time_limit=300,
     soft_time_limit=240
 )
-def run_media_extraction_new(self,
-                             url: str,
-                             extract_text: bool,
-                             include_comments: bool,
-                             platform: str,
-                             user_id: str,
-                             trace_id: str,
-                             app_id: str,
-                             root_trace_key: str
-                            ):
+def run_media_extraction_new(
+    self,
+    url: str,
+    extract_text: bool,
+    include_comments: bool,
+    platform: str,
+    user_id: str,
+    trace_id: str,
+    app_id: str,
+    root_trace_key: str
+):
     """
     Celery Task (Task A): V3 - 返回包含状态的字典。
     如果 extract_text=False 或无需转写，返回 {'status':'success', ...}。
@@ -300,6 +273,15 @@ def create_xhs_schema(
 
     return info
 
+
+def create_bl_schema(
+    basic_info: dict,
+    transcribed_text: str):
+    info = basic_info.copy()
+    info["content"] = transcribed_text
+
+    return info
+
 def create_schema(
     task_id: str,
     basic_info: dict,
@@ -314,6 +296,8 @@ def create_schema(
         final_standard_data = create_douyin_schema(platform, basic_info, url, transcribed_text,audio_duration)
     elif platform == MediaPlatform.XIAOHONGSHU:
         final_standard_data = create_xhs_schema(platform, basic_info, url, transcribed_text,audio_duration)
+    elif platform == MediaPlatform.BILIBILI:
+        final_standard_data = create_bl_schema( basic_info, transcribed_text)
     else:
         logger.error(f"[Task B {task_id=}] 未知的平台: {platform}", extra=log_extra)
         final_standard_data = {}
@@ -374,19 +358,20 @@ def get_audio_path(audio_path, log_extra):
     time_limit=600,
     soft_time_limit=240
 )
-def run_transcription_task(self,
-                           # 不再需要 original_task_id, basic_info, base_points
-                           audio_path: str,
-                           media_url_to_download: str,
-                           user_id: str,
-                           trace_id: str,
-                           app_id: str,
-                           basic_info: dict,
-                           platform: str,
-                           url: str,
-                           audio_duration : int,
-                           root_trace_key: str = None
-                           ):
+def run_transcription_task(
+    self,
+    # 不再需要 original_task_id, basic_info, base_points
+    audio_path: str,
+    media_url_to_download: str,
+    user_id: str,
+    trace_id: str,
+    app_id: str,
+    basic_info: dict,
+    platform: str,
+    url: str,
+    audio_duration : int,
+    root_trace_key: str = None
+    ):
     """
     Celery Task (Task B): 负责执行音频转写，并将转写结果作为自己的返回值。
     """

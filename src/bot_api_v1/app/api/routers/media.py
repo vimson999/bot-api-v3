@@ -15,12 +15,16 @@ from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.schemas import BaseResponse, MediaContentResponse, RequestContext
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.core.signature import require_signature # 如果还需要同步路径的签名
+from bot_api_v1.app.utils.media_extrat_format import Media_extract_format
 
 # 数据库
 from bot_api_v1.app.db.session import get_db
 
 # 服务与工具
-from bot_api_v1.app.services.business.media_service import MediaService, MediaError, MediaPlatform # 导入平台
+from bot_api_v1.app.services.business.media_service import MediaService, MediaError # 导入平台
+from bot_api_v1.app.constants.media_info import MediaPlatform
+
+
 from bot_api_v1.app.utils.decorators.tollgate import TollgateConfig
 from bot_api_v1.app.utils.decorators.auth_key_checker import require_auth_key
 from bot_api_v1.app.utils.decorators.auth_feishu_sheet import require_feishu_signature
@@ -79,6 +83,7 @@ router = APIRouter(prefix="/media", tags=["媒体服务"])
 
 # 实例化服务 (如果还需要调用 identify_platform 或 extract_text=False 的逻辑)
 media_service = MediaService()
+media_extract_format = Media_extract_format() # 实例化 Media_extract_format
 
 # clean_url 函数 (保持不变)
 async def clean_url(text: str) -> Optional[str]:
@@ -183,7 +188,7 @@ async def extract_media_content_smart(
         # --- 新通道：提交异步任务 ---
         logger.info("提交异步提取任务 (extract_text=True)", extra=log_extra)
         try:
-            platform = media_service.identify_platform(cleaned_url)
+            platform = media_extract_format._identify_platform(cleaned_url)
             if platform == MediaPlatform.UNKNOWN:
                  raise HTTPException(status_code=400, detail=f"无法识别或不支持的URL平台: {cleaned_url}")
 
