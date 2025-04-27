@@ -57,7 +57,7 @@ class MediaService:
     @gate_keeper()
     @log_service_call(method_type="media", tollgate="10-2")
     @cache_result(expire_seconds=600, prefix="media_extract")
-    async def extract_media_content(self, url: str, extract_text: bool = True, include_comments: bool = False) -> Dict[str, Any]:
+    async def extract_media_content(self, url: str, extract_text: bool = True, include_comments: bool = False, cal_points: bool = True) -> Dict[str, Any]:
         """
         提取媒体内容信息
         
@@ -81,9 +81,9 @@ class MediaService:
 
         try:
             if platform == MediaPlatform.DOUYIN:
-                return await self._process_douyin(url, extract_text, include_comments)
+                return await self._process_douyin(url, extract_text, include_comments,cal_points)
             elif platform == MediaPlatform.XIAOHONGSHU:
-                return await self._process_xiaohongshu(url, extract_text, include_comments)
+                return await self._process_xiaohongshu(url, extract_text, include_comments,cal_points)
             else:
                 raise MediaError(f"不支持的媒体平台: {url}")
         except Exception as e:
@@ -93,7 +93,7 @@ class MediaService:
                 raise MediaError(error_msg) from e
             raise MediaError(f"未知错误: {error_msg}") from e
     
-    async def _process_douyin(self, url: str, extract_text: bool, include_comments: bool) -> Dict[str, Any]:
+    async def _process_douyin(self, url: str, extract_text: bool, include_comments: bool, cal_points: bool = True) -> Dict[str, Any]:
         """处理抖音内容"""
         trace_key = request_ctx.get_trace_key()
         logger.info_to_db(f"处理抖音内容: {url}", extra={"request_id": trace_key})
@@ -101,7 +101,7 @@ class MediaService:
         # 使用 async with 语句正确初始化 TikTokService
         async with self.tiktok_service as service:
             # 调用抖音服务获取视频信息
-            video_info = await service.get_video_info(url,extract_text=extract_text)        
+            video_info = await service.get_video_info(url,extract_text=extract_text,cal_points=cal_points)        
 
         duration = self._convert_time_to_seconds(video_info.get("duration", 0))
         # 转换为统一结构
@@ -149,14 +149,14 @@ class MediaService:
 
         return result
     
-    async def _process_xiaohongshu(self, url: str, extract_text: bool, include_comments: bool) -> Dict[str, Any]:
+    async def _process_xiaohongshu(self, url: str, extract_text: bool, include_comments: bool, cal_points: bool = True) -> Dict[str, Any]:
         """处理小红书内容"""
         trace_key = request_ctx.get_trace_key()
         logger.info_to_db(f"处理小红书内容: {url}", extra={"request_id": trace_key})
         
         try:
             # 调用XHSService获取小红书笔记信息
-            note_info = await self.xhs_service.get_note_info(url, extract_text=extract_text)
+            note_info = await self.xhs_service.get_note_info(url, extract_text=extract_text,cal_points=cal_points)
             
             # 转换为统一结构
             result = {

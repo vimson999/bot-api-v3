@@ -841,3 +841,18 @@ sudo supervisorctl status
 
 sudo supervisorctl restart celery_whisper_worker
 sudo supervisorctl status
+
+
+
+cd /Users/v9/Documents/workspace/v9/code/bot-api-v1/src/bot_api_v1/app/static/
+/Users/v9/Documents/workspace/v9/code/bot-api-v1/venv/bin/python -m http.server 8080
+http://127.0.0.1:8080/src/bot_api_v1/app/static/html/m1.html
+http://127.0.0.1:8083/static/html/m1.html
+
+
+
+https://www.douyin.com/video/7475254041207950642
+
+
+
+https://v5-h.douyinvod.com/76cdfbb932f46815e57b5bc3a24de378/680dcbca/video/tos/cn/tos-cn-ve-15/oscgREeItAegeFQYmIIAsfAUDNQfLHH3Gx1u86/?a=1128&ch=0&cr=0&dr=0&er=0&cd=0%7C0%7C0%7C0&cv=1&br=172&bt=172&cs=2&ds=4&ft=QELByTDaffPdOP~-h1VNvAq-antLjrKt~TOCRka58sD_ejVhWL6&mime_type=video_mp4&qs=15&rc=OWVkaTdlZWQ6NjY1NzM1OEBpMzs6cnY5cjNxeDMzNGkzM0BgMWNgYWAwNmAxXy4yYDBgYSNoc25gMmRrLXJgLS1kLTBzcw%3D%3D&btag=c0000e000ad200&cquery=100y&dy_q=1745730911&feature_id=878fb589e872431af6a89a5a23ca701e&l=202504271315113F0092D37E40010BD307

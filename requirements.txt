@@ -118,3 +118,4 @@ aiohttp
 
 
 psycopg2-binary
+python-jose

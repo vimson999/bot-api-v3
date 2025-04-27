@@ -307,7 +307,8 @@ class TikTokService:
         self, 
         url: str, 
         retries: Optional[int] = None,
-        extract_text: bool = False
+        extract_text: bool = False,
+        cal_points: bool = True
     ) -> Dict[str, Any]:
         """
         Get detailed information about a TikTok/Douyin video.
@@ -333,20 +334,21 @@ class TikTokService:
         trace_key = request_ctx.get_trace_key()
         logger.info(f"Fetching video info for URL: {url}")
         
-        total_required = 10  # 基础消耗10分
+        if cal_points:
+            total_required = 10  # 基础消耗10分
             
-        # 从上下文获取积分信息
-        points_info = request_ctx.get_points_info()
-        available_points = points_info.get('available_points', 0)
+            # 从上下文获取积分信息
+            points_info = request_ctx.get_points_info()
+            available_points = points_info.get('available_points', 0)
         
-        # 验证积分是否足够
-        if available_points < total_required:
-            error_msg = f"获取基本信息时积分不足: 需要 {total_required} 积分您当前仅有 {available_points} 积分"
-            logger.info_to_db(error_msg, extra={"request_id": trace_key})
-            raise AudioTranscriptionError(error_msg)
-        
-        logger.info_to_db(f"获取基本信息时检查通过：所需 {total_required} 积分，可用 {available_points} 积分，需要记录这个消耗", 
-                extra={"request_id": trace_key})
+            # 验证积分是否足够
+            if available_points < total_required:
+                error_msg = f"获取基本信息时积分不足: 需要 {total_required} 积分您当前仅有 {available_points} 积分"
+                logger.info_to_db(error_msg, extra={"request_id": trace_key})
+                raise AudioTranscriptionError(error_msg)
+            
+            logger.info_to_db(f"获取基本信息时检查通过：所需 {total_required} 积分，可用 {available_points} 积分，需要记录这个消耗", 
+                    extra={"request_id": trace_key})
 
         # Implement retry logic
         for attempt in range(retries + 1):
@@ -388,9 +390,11 @@ class TikTokService:
                     raise VideoFetchError(f"Failed to process data for video ID: {video_id}")
                 
                 result = processed_data[0]
-                # 基础信息获取成功，即使不提取文案，也需要消耗基础积分
-                request_ctx.set_consumed_points(total_required, "基础信息获取成功")
-                logger.info(f"Successfully fetched info for video: {result.get('desc', 'Untitled')}")
+
+                if cal_points:
+                    # 基础信息获取成功，即使不提取文案，也需要消耗基础积分
+                    request_ctx.set_consumed_points(total_required, "基础信息获取成功")
+                    logger.info(f"Successfully fetched info for video: {result.get('desc', 'Untitled')}")
                 
                 # 提取视频文案（如果需要）
                 if extract_text and result.get("type") == MediaType.VIDEO and result.get("music_url"):
