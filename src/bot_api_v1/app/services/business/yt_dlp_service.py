@@ -36,12 +36,26 @@ class YtDLP_Service_Sync:
         """
         logger.info(f"[{task_id}] 开始获取视频基础信息: {url}", extra=log_extra)
         ydl_opts = {
-            "quiet": True,
-            "no_warnings": True,
+            # "quiet": True,
+            # "no_warnings": True,
             "skip_download": True,
             "extract_flat": False,
         }
+        media_extract_format = Media_extract_format()
+        platform = media_extract_format._identify_platform(url)
+        logger.debug(f'current platform: {platform}')
+
+        # 新增：如果是tiktok，读取cookie文件
+        if platform == "tiktok":
+            cookie_path = "/Users/v9/Documents/workspace/v9/code/bot-api-v1/src/bot_api_v1/app/config/cookies/tk.txt"
+            if os.path.exists(cookie_path):
+                ydl_opts["cookiefile"] = cookie_path
+            else:
+                logger.warning(f"[{task_id}] tiktok平台未找到cookie文件: {cookie_path}", extra=log_extra)
+
+                
         try:
+            logger.debug(f"[{task_id}] 使用的 ydl_opts: {ydl_opts}", extra=log_extra) # 添加这行日志
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
             if not info:
@@ -245,7 +259,7 @@ class YtDLP_Service_Sync:
         return result
 
 
-    def test_full(self, test_url:str):
+    def test_full(self, test_url:str,get_content:bool=True):
         # yt_sync_service = YtDLP_Service_Sync()
 
         # 测试用的 Bilibili 视频链接 (请替换为有效的链接)
@@ -258,17 +272,19 @@ class YtDLP_Service_Sync:
         }
 
         video_info = self.get_basic_info(task_id,test_url,log_extra)
-        actual_downloaded_path, downloaded_title = self.down_media(task_id,video_info.get("media").get("video_url"),log_extra)
 
         # def transcribe_audio_sync(self, media_url_to_download:str, platform:str ,original_url: str,audio_path: str, trace_id: str) -> str:
-        content = self.get_transcribed_text(
+        if get_content:
+            actual_downloaded_path, downloaded_title = self.down_media(task_id,video_info.get("media").get("video_url"),log_extra)
+
+            content = self.get_transcribed_text(
                 media_url_to_download = test_url,
                 platform=video_info.get("platform"),
                 original_url=test_url,
                 audio_path=actual_downloaded_path,
                 trace_id=task_id)
 
-        video_info["content"] = content.get("text")
+            video_info["content"] = content.get("text")
 
         return video_info
 

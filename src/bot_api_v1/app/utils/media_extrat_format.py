@@ -61,7 +61,7 @@ class Media_extract_format:
         url = url.lower()
         
         # 抖音URL模式
-        if any(domain in url for domain in ["douyin.com", "iesdouyin.com", "tiktok.com"]):
+        if any(domain in url for domain in ["douyin.com", "iesdouyin.com"]):
             return MediaPlatform.DOUYIN
             
         # 小红书URL模式
@@ -80,8 +80,8 @@ class Media_extract_format:
         if any(domain in url for domain in ["instagram.com"]):
             return MediaPlatform.INSTAGRAM
 
-        # if any(domain in url for domain in ["tiktok.com"]):
-        #     return MediaPlatform.TIKTOK
+        if any(domain in url for domain in ["tiktok.com"]):
+            return MediaPlatform.TIKTOK
             
         # 未知平台
         return MediaPlatform.UNKNOWN
