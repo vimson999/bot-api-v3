@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>短视频信息提取 - 支持抖音/快手/B站/小红书/YouTube/TikTok/Instagram 等主流平台 | 晓山 </title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="输入任意短视频链接，智能提取视频标题、作者、封面、标签、描述等基础信息，支持抖音、快手、B站、小红书、YouTube、TikTok、Instagram、Twitter等主流平台，接口可对接AI应用。">
+    <meta name="keywords" content="短视频, 视频信息提取, 视频解析, 视频标题, 视频作者, 视频封面, 抖音, 快手, B站, 小红书, YouTube, TikTok, Instagram、Twitter">
+    <meta name="robots" content="index,follow">
+    <meta name="author" content="v9, 晓山">
+    <meta name="copyright" content="v9, 晓山">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="短视频信息提取 - 支持主流平台 | 晓山">
+    <meta property="og:description" content="输入短视频链接，快速提取视频标题、作者、封面等基础信息，支持抖音、快手、B站、小红书、YouTube、TikTok、Instagram、Twitter等主流平台。">
+    <meta property="og:url" content="https://www.xiaoshanqing.tech/static/html/m1.html">
+    <meta property="og:site_name" content="短视频信息提取">
+    <meta property="og:image" content="https://www.xiaoshanqing.tech/static/img/cover.png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="短视频信息提取 - 支持主流平台 | 晓山">
+    <meta name="twitter:description" content="输入短视频链接，快速提取视频标题、作者、封面等基础信息，支持主流平台。">
+    <meta name="twitter:image" content="https://www.xiaoshanqing.tech/static/img/cover.png">
+    <link rel="icon" href="/static/html/favicon.ico">
+    <link rel="canonical" href="https://www.xiaoshanqing.tech/static/html/m1.html">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="stylesheet" href="../css/s1.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="sitemap" type="application/xml" title="Sitemap" href="/sitemap.xml">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js" integrity="sha512-a+SUDuwNzXDvz4XrIcXHuCf089/iJAoN4lmrXJg18XnduKK6YlDHNRalv4yd1N40OKI80tFidF+rqTFKGPoWFQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+</head>
+<body>
+    <header class="site-header" role="banner">
+        <div class="header-inner">
+            <a href="/" class="logo" aria-label="首页">
+                <span class="logo-icon" aria-hidden="true">🎬</span>
+                <span class="logo-text">xiaoshanqing</span>
+            </a>
+            <nav class="nav" aria-label="主导航">
+                <a href="/" class="nav-link active">首页</a>
+                <a href="/static/html/douyin.html" class="nav-link active">抖音</a>
+                <a href="/static/html/xiaohongshu.html" class="nav-link">小红书</a>
+                <a href="/static/html/bilibili.html" class="nav-link">B站</a>
+                <a href="/static/html/youtube.html" class="nav-link">YouTube</a>
+                <a href="/static/html/tiktok.html" class="nav-link">TikTok</a>
+                <a href="/static/html/ins.html" class="nav-link">Ins</a>
+                <a href="/static/html/x.html" class="nav-link">X</a>
+                <a href="/static/html/api.html" class="nav-link">API文档</a>
+                <a href="/static/html/about.html" class="nav-link">关于</a>
+            </nav>
+        </div>
+    </header>
+    <main id="main-content" role="main">
+        <div class="center-card">
+            <h1 class="main-title">
+                获取 <span class="highlight">短视频</span> 基本信息
+            </h1>
+            <p class="sub-title">
+                输入任意短视频链接，智能提取视频标题、作者、封面、标签、描述等基础信息。支持抖音、快手、B站、小红书、YouTube、TikTok、Instagram、Twitte等主流平台，接口可对接AI应用。
+            </p>
+            <form class="input-row" id="video-form" autocomplete="off" onsubmit="return false;" aria-label="短视频信息提取表单">
+                <input id="video-url" type="url" placeholder="https://example.com/video/xxxx" autocomplete="off" aria-label="短视频链接" required>
+                <button id="fetch-btn" type="submit" aria-label="获取视频信息">获取信息</button>
+                <span id="loading" style="display:none;margin-left:8px;" aria-live="polite">⏳</span>
+            </form>
+        </div>
+        <section id="video-detail-section" class="video-detail-section" style="display:none;" aria-label="视频详细信息">
+            <h2 class="detail-title">视频详细信息</h2>
+            <div class="detail-content" id="video-detail-content">
+                <!-- 这里将由 JS 动态填充视频详细信息 -->
+            </div>
+        </section>
+    </main>
+    <footer class="site-footer" role="contentinfo">
+        &copy; 2025 短视频信息提取 | Powered by 晓山
+        <br>
+        <span style="color:#888;">本网站为个人学习交流使用，不用于商业用途。</span>
+        <br>
+        <a href="/static/html/privacy.html" target="_blank" rel="noopener" style="color:#888;text-decoration:none;">隐私政策</a>
+        <span style="margin:0 8px;">|</span>
+        <a href="/static/html/user_agreement.html" target="_blank" rel="noopener" style="color:#888;text-decoration:none;">用户协议</a>
+        <br>
+        版权所有 ©2025 v9 保留所有权利 
+        <br>
+        联系方式：<a href="mailto:vimson500@gmail.com" style="color:#888;text-decoration:none;">vimson500@gmail.com</a>
+    </footer>
+    <script src="../js/m1.js"></script>
+</body>
+</html>

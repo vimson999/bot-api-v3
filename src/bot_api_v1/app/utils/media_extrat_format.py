@@ -11,6 +11,7 @@ from bot_api_v1.app.services.business.tiktok_service import TikTokService, TikTo
 from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
 from bot_api_v1.app.services.business.xhs_service import XHSService
 
+from bot_api_v1.app.constants.media_info import MediaPlatform
 
 class Media_extract_format:
     def _extract_tags_from_douyin(self, video_info: Dict[str, Any]) -> List[str]:
@@ -45,3 +46,42 @@ class Media_extract_format:
             return datetime.fromtimestamp(timestamp).isoformat()
         except:
             return None
+
+    
+    def _identify_platform(self, url: str) -> str:
+        """
+        识别URL对应的平台
+        
+        Args:
+            url: 媒体URL
+            
+        Returns:
+            平台标识: "douyin", "xiaohongshu" 或 "unknown"
+        """
+        url = url.lower()
+        
+        # 抖音URL模式
+        if any(domain in url for domain in ["douyin.com", "iesdouyin.com", "tiktok.com"]):
+            return MediaPlatform.DOUYIN
+            
+        # 小红书URL模式
+        if any(domain in url for domain in ["xiaohongshu.com", "xhslink.com", "xhs.cn"]):
+            return MediaPlatform.XIAOHONGSHU
+
+        # 
+        if any(domain in url for domain in ["bilibili.com", "bilibili.com", "bilibili.cn"]):
+            return MediaPlatform.BILIBILI
+
+
+        if any(domain in url for domain in ["youtu.be", "youtube.com"]):
+            return MediaPlatform.YOUTUBE
+            
+
+        if any(domain in url for domain in ["instagram.com"]):
+            return MediaPlatform.INSTAGRAM
+
+        # if any(domain in url for domain in ["tiktok.com"]):
+        #     return MediaPlatform.TIKTOK
+            
+        # 未知平台
+        return MediaPlatform.UNKNOWN

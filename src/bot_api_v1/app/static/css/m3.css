@@ -1,0 +1,25 @@
+body {
+    background: #f7f7f7;
+    font-family: 'Inter', '微软雅黑', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+.video-container {
+    max-width: 600px;
+    margin: 40px auto;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    padding: 24px 20px 32px 20px;
+    text-align: center;
+}
+.video-container h2 {
+    margin-bottom: 18px;
+    font-size: 1.3em;
+    color: #222;
+}
+.tip {
+    margin-top: 16px;
+    color: #888;
+    font-size: 0.98em;
+}

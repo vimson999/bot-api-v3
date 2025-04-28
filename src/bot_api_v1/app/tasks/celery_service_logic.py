@@ -1,18 +1,16 @@
-from sqlalchemy import false
-from bot_api_v1.app.services.business.media_service import MediaPlatform, MediaError
+from bot_api_v1.app.services.business.media_service import MediaError
 from bot_api_v1.app.services.business.xhs_service import XHSService, XHSError , handle_note_info 
 from bot_api_v1.app.services.business.script_service import ScriptService, AudioDownloadError, AudioTranscriptionError
-from bot_api_v1.app.constants.media_info import MediaType
+from bot_api_v1.app.constants.media_info import MediaType,MediaPlatform
+from bot_api_v1.app.services.business.yt_dlp_service import YtDLP_Service_Sync
 
 from bot_api_v1.app.core.logger import logger
-import time
 import os
-import asyncio # 用于 run_async_in_sync (如果 celery_service_logic 需要)
 
 # !! 导入新的同步缓存装饰器 !!
 from bot_api_v1.app.core.cache import cache_result_sync
 from bot_api_v1.app.core.config import settings
-from bot_api_v1.app.tasks.celery_tiktok_service import CeleryTikTokService, TikTokError, InitializationError,VideoFetchError # 新的 TikTok 服务
+from bot_api_v1.app.tasks.celery_tiktok_service import CeleryTikTokService, TikTokError, InitializationError,VideoFetchError
 
 
 SPIDER_XHS_LOADED = True 
@@ -173,6 +171,21 @@ def fetch_basic_media_info(
                  if tiktok_service:
                      tiktok_service.close_sync() # 确保资源被清理
 
+        elif platform == MediaPlatform.BILIBILI:
+            yt_dlp_service = YtDLP_Service_Sync()
+            media_data = yt_dlp_service.get_basic_info(trace_id, url, log_extra)
+
+            if media_data is None:
+                logger.error(f"[Fetch Basic {trace_id=}] 获取Bilibili基础信息失败，url={url}", extra=log_extra)
+                raise MediaError("未能获取Bilibili基础信息 (内部方法返回 None)")
+
+        elif platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.TIKTOK or platform == MediaPlatform.INSTAGRAM or platform == MediaPlatform.TWITTER:
+            yt_dlp_service = YtDLP_Service_Sync()
+            media_data = yt_dlp_service.get_basic_info(trace_id, url, log_extra)
+
+            if media_data is None:
+                logger.error(f"[Fetch Basic {trace_id=}] 获取{platform}基础信息失败，url={url}", extra=log_extra)
+                raise MediaError(f"未能获取B{platform}基础信息 (内部方法返回 None)")
         else:
             raise MediaError(f"不支持的媒体平台: {platform}")
 
@@ -238,7 +251,6 @@ def prepare_media_for_transcription(
         logger.error(f"[Prepare Transcription {trace_id=}] 获取的基础信息格式不正确 (非字典)", extra=log_extra)
         return {"status": "failed", "error": "内部错误：基础信息格式错误", "points_consumed": 0}
 
-
     # 2. 检查是否是视频类型，并获取下载链接
     media_type = basic_info_data.get("type", "").lower() 
     if not media_type :
@@ -258,7 +270,7 @@ def prepare_media_for_transcription(
     try:
         # 'transcribe_audio_sync_:{"original_url": "https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed"}'
         media_url_to_download = None
-        if platform == MediaPlatform.XIAOHONGSHU:
+        if platform == MediaPlatform.XIAOHONGSHU or platform == MediaPlatform.BILIBILI:
             media_url_to_download = basic_info_data.get("media", {}).get("video_url")
         elif platform == MediaPlatform.DOUYIN:
             # 抖音可能优先使用无水印链接或其他下载链接
@@ -280,13 +292,16 @@ def prepare_media_for_transcription(
             # 3. 下载音频文件
         logger.info(f"[Prepare Transcription {trace_id=}] 开始下载音频文件从: {media_url_to_download}", extra=log_extra)
         script_service = ScriptService()  # 实例化下载/转写服务
-        
+        yt_dlp_service = YtDLP_Service_Sync()
+
         # 根据平台选择不同的下载方法
         if platform == MediaPlatform.DOUYIN:
             audio_path= script_service.download_media_sync(url=media_url_to_download,trace_id=trace_id,root_trace_key=root_trace_key)
-        else:
-            # 对于其他平台使用通用下载方法
+        elif platform == MediaPlatform.XIAOHONGSHU:
             audio_path, _ = script_service.download_audio_sync(media_url_to_download, trace_id,root_trace_key)
+        elif platform == MediaPlatform.BILIBILI:
+            audio_path, _  = yt_dlp_service.down_media(trace_id, media_url_to_download,log_extra)
+
         
         if not audio_path or not os.path.exists(audio_path):  # 检查路径有效性
             raise AudioDownloadError("下载服务未返回有效路径或文件不存在")

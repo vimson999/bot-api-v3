@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     SECRET_KEY: str = os.getenv("SECRET_KEY", secrets.token_urlsafe(32))
+
+    SITE_JS_SECRET_KEY: str = os.getenv("SITE_JS_SECRET_KEY", secrets.token_urlsafe(32))
     
     # 日期时间和地区设置
     TIMEZONE: str = "Asia/Shanghai" # 将被 Celery 使用
@@ -136,6 +138,9 @@ class Settings(BaseSettings):
     # URL 配置 (保持不变)
     DOMAIN_API_URL : str = os.getenv("DOMAIN_API_URL", "http://iw6i1vjj93ml.guyubao.com")
     H5_FRONTEND_URL: str = os.getenv("H5_FRONTEND_URL", "http://iw6i1vjj93ml.guyubao.com/h5")
+    DEV_URL : str = os.getenv("DEV_URL", "http://127.0.0.1:8083")
+
+
 
     class Config:
         env_file = ".env" # 会自动加载 .env 文件中的环境变量

@@ -5,6 +5,9 @@ from datetime import datetime
 import uuid
 import re
 
+import httpx
+from fastapi import Header
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Response # 导入 Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, HttpUrl, validator, Field
@@ -15,13 +18,18 @@ from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.schemas import BaseResponse, MediaContentResponse, RequestContext
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.core.signature import require_signature # 如果还需要同步路径的签名
+from bot_api_v1.app.utils.media_extrat_format import Media_extract_format
 
 # 数据库
 from bot_api_v1.app.db.session import get_db
 
 # 服务与工具
-from bot_api_v1.app.services.business.media_service import MediaService, MediaError, MediaPlatform # 导入平台
+from bot_api_v1.app.services.business.media_service import MediaService, MediaError # 导入平台
+from bot_api_v1.app.constants.media_info import MediaPlatform
+
+
 from bot_api_v1.app.utils.decorators.tollgate import TollgateConfig
+from bot_api_v1.app.utils.decorators.api_refer import require_api_security ,decrypt_and_validate_request
 from bot_api_v1.app.utils.decorators.auth_key_checker import require_auth_key
 from bot_api_v1.app.utils.decorators.auth_feishu_sheet import require_feishu_signature
 
@@ -79,6 +87,7 @@ router = APIRouter(prefix="/media", tags=["媒体服务"])
 
 # 实例化服务 (如果还需要调用 identify_platform 或 extract_text=False 的逻辑)
 media_service = MediaService()
+media_extract_format = Media_extract_format() # 实例化 Media_extract_format
 
 # clean_url 函数 (保持不变)
 async def clean_url(text: str) -> Optional[str]:
@@ -183,9 +192,14 @@ async def extract_media_content_smart(
         # --- 新通道：提交异步任务 ---
         logger.info("提交异步提取任务 (extract_text=True)", extra=log_extra)
         try:
-            platform = media_service.identify_platform(cleaned_url)
+            platform = media_extract_format._identify_platform(cleaned_url)
             if platform == MediaPlatform.UNKNOWN:
                  raise HTTPException(status_code=400, detail=f"无法识别或不支持的URL平台: {cleaned_url}")
+
+            task_type = "media_extraction"
+            if platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.TIKTOK or platform == MediaPlatform.INSTAGRAM or platform == MediaPlatform.TWITTER:
+                # 不支持的平台
+                task_type = "bad_news"
 
             # !! 调用 celery_adapter 提交新任务 !!
             task_id = register_task(
@@ -202,7 +216,8 @@ async def extract_media_content_smart(
                     root_trace_key
                     # 如果需要，传递积分信息: initial_points_info=...
                 ),
-                task_type="media_extraction" # 可以指定队列
+                # task_type="media_extraction" # 可以指定队列
+                task_type=task_type
             )
 
             if not task_id:
@@ -473,10 +488,107 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
          return final_response_obj # FastAPI 会处理序列化
 
 
+@router.get("/proxy/vd")
+async def proxy_video(url: str):
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        r = await client.get(url)
+        headers = {
+            "Content-Type": r.headers.get("Content-Type", "video/mp4"),
+            "Access-Control-Allow-Origin": "*"
+        }
+        return Response(content=r.content, headers=headers)
 
-# ... 现有代码 ...
 
-# --- 新增测试端点 ---
+
+@router.post(
+    "/e1/bsc",
+    response_model=MediaExtractResponse,
+    summary="同步提取媒体基础信息",
+    description="同步提取媒体基础信息（不抓文案，仅基础信息），适合前端直接调用。",
+    tags=["媒体服务"]
+)
+@TollgateConfig(title="不扣分提取接口", type="media", base_tollgate="10", current_tollgate="1", plat="s-site")
+@require_api_security()
+async def extract_media_basic_info(
+    request: Request,
+    decrypted_payload: dict = Depends(decrypt_and_validate_request)
+):
+    """
+    处理加密的媒体基础信息提取请求。
+    解密和 Ticket 验证由 `decrypt_and_validate_request` 依赖项处理。
+    """
+    # decrypted_payload 现在包含了解密后的数据，例如: {'url': '...', 'extract_text': False, ...}
+    # 现在可以安全地使用它来构造 Pydantic 模型或直接访问
+    try:
+        # 在函数体内部，使用解密后的字典来创建 Pydantic 模型实例
+        extract_request = MediaExtractRequest(**decrypted_payload)
+    except Exception as e: # 例如 Pydantic 验证错误
+         logger.warning(f"无法将解密后的数据构造成 MediaExtractRequest: {e}, data: {decrypted_payload}")
+         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="解密后的请求数据格式不正确")
+
+
+
+    # --- 从这里开始，逻辑与之前类似，但使用 extract_request ---
+    trace_key = request_ctx.get_trace_key()
+    app_id = request_ctx.get_app_id()
+    source = request_ctx.get_source()
+    user_id = request_ctx.get_cappa_user_id()
+    user_name = request_ctx.get_user_name()
+    ip_address = request.client.host if request.client else "unknown_ip"
+    root_trace_key = request_ctx.get_root_trace_key()
+
+    request_context = RequestContext(
+        trace_id=trace_key, app_id=app_id, source=source, user_id=user_id,
+        user_name=user_name, ip=ip_address, timestamp=datetime.now()
+    )
+    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id, "root_trace_key": root_trace_key}
+
+    logger.info_to_db(
+        f"不扣分提取接口接收媒体基础信息提取请求 (已解密): url={extract_request.url}",
+        extra=log_extra
+    )
+
+    cleaned_url = await clean_url(extract_request.url)
+    if not cleaned_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="无效的URL地址或URL格式不正确")
+
+    try:
+        media_content = await media_service.extract_media_content(
+            url=cleaned_url,
+            extract_text=False, # 明确指定，不依赖于解密后的请求值（除非需要用户控制）
+            include_comments=extract_request.include_comments, # 使用解密后的值
+            cal_points = False # 明确指定
+        )
+
+        if not media_content: # 如果服务返回 None 或空
+             raise MediaError("无法从指定 URL 提取到媒体内容")
+
+        response_data = MediaExtractResponse(
+            code=200,
+            message="成功提取媒体基础信息",
+            # 确保 media_content 是字典或可以解包给 MediaContentResponse
+            data=MediaContentResponse(**media_content) if isinstance(media_content, dict) else media_content,
+            request_context=request_context
+        )
+        logger.debug("同步提取媒体基础信息结束", extra=log_extra)
+        return response_data
+
+    # **改进**: 更具体的异常处理
+    except MediaError as e:
+        logger.warning(f"媒体提取失败 (MediaError): {str(e)} for url: {cleaned_url}", extra=log_extra)
+        # 对于客户端可预期的错误（如找不到视频），使用 404 或 400
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"无法提取媒体内容: {str(e)}")
+    except HTTPException:
+        # 重新抛出由 clean_url 或其他地方引发的 HTTPException
+        raise
+    except Exception as e:
+        # 捕获其他所有意外错误
+        logger.error(f"处理媒体提取请求时发生意外错误: {str(e)} for url: {cleaned_url}", exc_info=True, extra=log_extra)
+        # 对于未知服务器错误，使用 500
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="处理请求时发生内部错误")
+
+
+
 @router.get(
     "/test/xhs_sync",
     summary="测试小红书同步提取方法",
@@ -541,4 +653,66 @@ async def test_xhs_sync_method(
             }
         }
 
-# ... 现有代码继续 ...
+@router.get(
+    "/test/xhs_sync",
+    summary="测试小红书同步提取方法",
+    description="测试 XHSService 的 get_note_info_sync_for_celery 方法，用于 Celery 任务开发",
+    tags=["媒体服务-测试"]
+)
+async def test_xhs_sync_method(
+    request: Request,
+    # url: str = "https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed",
+    url: str = "https://v.douyin.com/YX-HGKSVNzU/",
+    extract_text: bool = True
+):
+    """
+    测试 XHSService 的同步方法，用于 Celery 任务开发
+    """
+    # 获取基本信息
+    trace_key = request_ctx.get_trace_key() or str(uuid.uuid4())
+    user_id = request_ctx.get_user_id() or "test_user"
+    
+    # 实例化 XHSService
+    from bot_api_v1.app.services.business.xhs_service import XHSService
+    xhs_service = XHSService()
+    
+    try:
+        # 调用同步方法
+        # result = xhs_service.get_note_info_sync_for_celery(
+        #     url=url,
+        #     extract_text=extract_text,
+        #     user_id_for_points=user_id,
+        #     trace_id=trace_key
+        # )
+
+        from bot_api_v1.app.services.business.tiktok_service import TikTokService
+        tiktok_service = TikTokService()
+        result = tiktok_service.get_video_info_sync_for_celery(
+            url=url,
+            extract_text=extract_text,
+            user_id_for_points=user_id,
+            trace_id=trace_key
+        )
+        
+        # 返回结果
+        return {
+            "code": 200,
+            "message": "测试成功",
+            "test_result": result,
+            "request_context": {
+                "trace_id": trace_key,
+                "user_id": user_id,
+                "timestamp": datetime.now().isoformat()
+            }
+        }
+    except Exception as e:
+        logger.error(f"测试 XHSService 同步方法失败: {str(e)}", exc_info=True)
+        return {
+            "code": 500,
+            "message": f"测试失败: {str(e)}",
+            "request_context": {
+                "trace_id": trace_key,
+                "user_id": user_id,
+                "timestamp": datetime.now().isoformat()
+            }
+        }

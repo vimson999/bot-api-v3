@@ -16,11 +16,8 @@ from bot_api_v1.app.tasks.base import wait_for_tasks, wait_for_log_tasks, TASK_T
 from bot_api_v1.app.db.init_db import init_db, wait_for_db
 from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.middlewares.rate_limit import RateLimitMiddleware
-from bot_api_v1.app.api.routers import script
-from bot_api_v1.app.api.routers import wechat_mp  # Import the media route
-
+from bot_api_v1.app.api.routers import media,ticket,wechat_mp,script,wechat
 # from bot_api_v1.app.monitoring import setup_metrics, metrics_middleware, start_system_metrics_collector
-from bot_api_v1.app.api.routers import wechat  # Import the wechat router
 from bot_api_v1.app.services.business.wechat_service import WechatService  # 添加这行导入
 import os
 
@@ -81,10 +78,8 @@ def create_app():
     app.include_router(script.router, prefix="/script")
     app.include_router(wechat.router, prefix="/wechat")
     app.include_router(wechat_mp.router, prefix="/wechat_mp")
-
-    # 添加新的媒体路由
-    from bot_api_v1.app.api.routers import media
     app.include_router(media.router, prefix="/media")
+    app.include_router(ticket.router, prefix="/tkt")
 
 
 
