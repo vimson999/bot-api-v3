@@ -140,7 +140,10 @@ class Settings(BaseSettings):
     H5_FRONTEND_URL: str = os.getenv("H5_FRONTEND_URL", "http://iw6i1vjj93ml.guyubao.com/h5")
     DEV_URL : str = os.getenv("DEV_URL", "http://127.0.0.1:8083")
 
+    DOMAIN_MAIN_URL : str = os.getenv("DOMAIN_MAIN_URL", "https://www.xiaoshanqing.tech")
+    DOMAIN_IP_URL : str = os.getenv("DOMAIN_IP_URL", "http://42.192.40.44")
 
+    # 其他配置 (保持不变)
 
     class Config:
         env_file = ".env" # 会自动加载 .env 文件中的环境变量

@@ -136,7 +136,7 @@ def require_api_security(
 ):
     if allowed_domains is None:
         # 从配置加载，提供默认值以防万一
-        allowed_domains = getattr(settings, "ALLOWED_ORIGINS", [settings.DEV_URL, settings.DOMAIN_API_URL])
+        allowed_domains = getattr(settings, "ALLOWED_ORIGINS", [settings.DEV_URL, settings.DOMAIN_MAIN_URL, settings.DOMAIN_IP_URL, settings.DOMAIN_API_URL])
     def decorator(func):
         @wraps(func)
         async def wrapper(*args, request: Request, x_api_token: str = Header(None), **kwargs):
