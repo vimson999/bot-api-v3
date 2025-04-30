@@ -82,6 +82,9 @@ class Media_extract_format:
 
         if any(domain in url for domain in ["tiktok.com"]):
             return MediaPlatform.TIKTOK
+
+        if any(domain in url for domain in ["kuaishou.com"]):
+            return MediaPlatform.KUAISHOU
             
         # 未知平台
         return MediaPlatform.UNKNOWN

@@ -140,8 +140,13 @@ class Settings(BaseSettings):
     H5_FRONTEND_URL: str = os.getenv("H5_FRONTEND_URL", "http://iw6i1vjj93ml.guyubao.com/h5")
     DEV_URL : str = os.getenv("DEV_URL", "http://127.0.0.1:8083")
 
+
     DOMAIN_MAIN_URL : str = os.getenv("DOMAIN_MAIN_URL", "https://www.xiaoshanqing.tech")
     DOMAIN_IP_URL : str = os.getenv("DOMAIN_IP_URL", "http://42.192.40.44")
+    KUAISHOU_SITE : str = os.getenv("KUAISHOU_SITE", "http://127.0.0.1:9000")
+    TIKTOK_COOKIE_FILE : str = os.getenv("TIKTOK_COOKIE_FILE","/Users/v9/Documents/workspace/v9/code/bot-api-v1/src/bot_api_v1/app/config/cookies/tk.txt")
+
+    OPEN_ROUTER_API_KEY_QW : str = os.getenv("OPEN_ROUTER_API_KEY_QW","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")
 
     # 其他配置 (保持不变)
 

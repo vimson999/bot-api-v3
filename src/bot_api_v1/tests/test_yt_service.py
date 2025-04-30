@@ -7,14 +7,14 @@ from requests.exceptions import RequestException # 导入 requests 的异常类
 if __name__ == "__main__":
     # 定义测试用例字典，key为平台名，value为测试链接
     test_urls = {
-        "douyin": "https://www.douyin.com/video/7475254041207950642",
+        # "douyin": "https://www.douyin.com/video/7475254041207950642",
         "tiktok": "https://www.tiktok.com/t/ZP8jq1GVP/",
-        "kuaishou": "https://www.kuaishou.com/f/X-MGnYq0BTJfH0y",
+        # "kuaishou": "https://www.kuaishou.com/f/X-MGnYq0BTJfH0y",
         # "kuaishou": "https://www.kuaishou.com/f/X34s4ikwqfv7vZN",
 
         # "bilibili": "https://www.bilibili.com/video/BV1EV5iznEQZ?spm_id_from=333.1007.tianma.3-2-6.click",
-        # "instagram": "https://www.instagram.com/p/DIrTqrbvVHS/?igsh=MTdmeTBrZnVkODkycQ==",
-        # "youtube": "https://www.youtube.com/watch?v=c7IVaQi643g"
+        "instagram": "https://www.instagram.com/p/DIrTqrbvVHS/?igsh=MTdmeTBrZnVkODkycQ==",
+        "youtube": "https://www.youtube.com/watch?v=c7IVaQi643g"
     }
     # get_content = True
     get_content = False

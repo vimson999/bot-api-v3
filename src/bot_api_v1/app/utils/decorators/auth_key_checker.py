@@ -17,6 +17,7 @@ from bot_api_v1.app.db.session import get_db, async_session_maker
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
 import time  # 确保导入time模块
+from bot_api_v1.app.core.schemas import BaseResponse
 
 
 def require_auth_key(exempt: bool = False):
@@ -349,6 +350,11 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=error_msg
                 )
+                # return BaseResponse(
+                #     code=status.HTTP_402_PAYMENT_REQUIRED,
+                #     message=error_msg,
+                #     data=None
+                # )
             return True
         
         # 如果账户余额为0，提示用户充值
@@ -366,6 +372,11 @@ async def _check_user_points(db: AsyncSession, request: Request, key_obj: MetaAu
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=error_msg
                 )
+                # return BaseResponse(
+                #     code=status.HTTP_402_PAYMENT_REQUIRED,
+                #     message=error_msg,
+                #     data=None
+                # )
             return True
         
         # 将积分信息存入上下文

@@ -93,7 +93,7 @@ def run_media_extraction_new(
 
     try:
         task_b_result = get_task_b_result(url)
-        if task_b_result:
+        if task_b_result and task_b_result.get("data"):
             logger.info_to_db(f"[Task A {task_id}] 从缓存中捞到了url is {url}的Task B结果，那么直接返回", extra=log_extra)
             return task_b_result
     except Exception as e:
@@ -282,6 +282,12 @@ def create_bl_schema(
 
     return info
 
+
+def create_ks_schema(
+    basic_info: dict,
+    transcribed_text: str):
+    return create_bl_schema(basic_info, transcribed_text)
+
 def create_schema(
     task_id: str,
     basic_info: dict,
@@ -298,9 +304,11 @@ def create_schema(
         final_standard_data = create_xhs_schema(platform, basic_info, url, transcribed_text,audio_duration)
     elif platform == MediaPlatform.BILIBILI:
         final_standard_data = create_bl_schema( basic_info, transcribed_text)
+    elif platform == MediaPlatform.KUAISHOU:
+        final_standard_data = create_ks_schema( basic_info, transcribed_text)
     else:
         logger.error(f"[Task B {task_id=}] 未知的平台: {platform}", extra=log_extra)
-        final_standard_data = {}
+        final_standard_data = create_bl_schema( basic_info, transcribed_text)
 
     return final_standard_data
 
@@ -381,7 +389,7 @@ def run_transcription_task(
         
     try:
         task_b_result = get_task_b_result(url)
-        if task_b_result:
+        if task_b_result and task_b_result.get("data"):
             logger.info_to_db(f"[Task B {task_id}] 从缓存中捞取url is {url}的结果返回", extra=log_extra)
             return task_b_result
     except Exception as e:

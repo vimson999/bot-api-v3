@@ -3,6 +3,7 @@ from bot_api_v1.app.services.business.xhs_service import XHSService, XHSError , 
 from bot_api_v1.app.services.business.script_service import ScriptService, AudioDownloadError, AudioTranscriptionError
 from bot_api_v1.app.constants.media_info import MediaType,MediaPlatform
 from bot_api_v1.app.services.business.yt_dlp_service import YtDLP_Service_Sync
+from bot_api_v1.app.services.business.kuaishou_service import KuaishouService
 
 from bot_api_v1.app.core.logger import logger
 import os
@@ -146,11 +147,16 @@ def fetch_basic_media_info(
                 )
                 if media_data is None: # 检查返回值
                      raise TikTokError("未能获取抖音基础信息 (内部方法返回 None)")
-        
             finally:
                  if tiktok_service:
                      tiktok_service.close_sync() # 确保资源被清理
 
+        elif platform == MediaPlatform.KUAISHOU:     
+            ks_service = KuaishouService() 
+            media_data = ks_service.get_video_info(trace_id, url, log_extra)
+            if media_data is None: # 检查返回值
+                raise TikTokError("未能获取KUAISHOU基础信息 (内部方法返回 None)")
+        
         elif platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.TIKTOK or platform == MediaPlatform.INSTAGRAM or platform == MediaPlatform.TWITTER or platform == MediaPlatform.BILIBILI:
             yt_dlp_service = YtDLP_Service_Sync()
             media_data = yt_dlp_service.get_basic_info(trace_id, url, log_extra)
@@ -242,11 +248,13 @@ def prepare_media_for_transcription(
     try:
         # 'transcribe_audio_sync_:{"original_url": "https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed"}'
         media_url_to_download = None
-        if platform == MediaPlatform.XIAOHONGSHU or platform == MediaPlatform.BILIBILI:
+        if platform == MediaPlatform.XIAOHONGSHU or platform == MediaPlatform.BILIBILI or platform == MediaPlatform.KUAISHOU:
             media_url_to_download = basic_info_data.get("media", {}).get("video_url")
         elif platform == MediaPlatform.DOUYIN:
             # 抖音可能优先使用无水印链接或其他下载链接
             media_url_to_download = basic_info_data.get("data").get("downloads") or basic_info_data.get("media_url")
+        elif platform == MediaPlatform.TIKTOK or platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.INSTAGRAM:
+            media_url_to_download = url # 直接使用 URL
         else:
             media_url_to_download = basic_info_data.get("media_url")  # 通用尝试
 
@@ -267,13 +275,14 @@ def prepare_media_for_transcription(
         yt_dlp_service = YtDLP_Service_Sync()
 
         # 根据平台选择不同的下载方法
-        if platform == MediaPlatform.DOUYIN:
+        if platform == MediaPlatform.DOUYIN or platform == MediaPlatform.KUAISHOU:
             audio_path= script_service.download_media_sync(url=media_url_to_download,trace_id=trace_id,root_trace_key=root_trace_key)
         elif platform == MediaPlatform.XIAOHONGSHU:
             audio_path, _ = script_service.download_audio_sync(media_url_to_download, trace_id,root_trace_key)
-        elif platform == MediaPlatform.BILIBILI:
+        elif platform == MediaPlatform.BILIBILI :
             audio_path, _  = yt_dlp_service.down_media(trace_id, media_url_to_download,log_extra)
-
+        elif platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.TIKTOK or platform == MediaPlatform.INSTAGRAM:
+            audio_path, _ = yt_dlp_service.down_media(trace_id, media_url_to_download,log_extra)
         
         if not audio_path or not os.path.exists(audio_path):  # 检查路径有效性
             raise AudioDownloadError("下载服务未返回有效路径或文件不存在")

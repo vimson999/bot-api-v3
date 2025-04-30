@@ -473,6 +473,9 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
     )
 
     logger.info_to_db(f"查询任务状态 (V4) 完成,final check final_response_obj is : {final_response_obj}", extra=log_extra)
+    if ( response_status_code == status.HTTP_200_OK and not response_data ):
+        request_ctx.set_consumed_points(0)
+        logger.info_to_db(f" 查询任务状态 (V4)这里没有真正拿到返回值 data is null ，因此不能扣分 : {final_response_obj}", extra=log_extra)
 
     # 5. 返回响应
     if response_status_code == status.HTTP_202_ACCEPTED:

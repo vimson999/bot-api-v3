@@ -773,10 +773,11 @@ git push https://vim999:b5ff334e279b324f74a78c9d5d67c046@gitee.com/vim999/bot_ap
 
 
 
-celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q celery,bad_news -P solo -n task_bad_news
 celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q celery,media_extraction -P solo -n task_A
 celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q transcription -P solo -n task_B
 celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q logging  -P solo -n task_log
+celery -A bot_api_v1.app.tasks.celery_app worker --loglevel=debug -Q celery,bad_news -P solo -n task_bad_news
+
 
 /Users/v9/Documents/workspace/v9/code/bot-api-v1/venv/bin/python -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --workers=4 --loop=uvloop --http=httptools
 /Users/v9/Documents/3---work/06---dev---python/bot-api-v1/bot_api_v1/venv/bin/python -m uvicorn bot_api_v1.app.core.app_factory:create_app --reload --host 0.0.0.0 --port=8083 --workers=4 --loop=uvloop --http=httptools
@@ -855,4 +856,8 @@ https://www.douyin.com/video/7475254041207950642
 
 
 
-https://v5-h.douyinvod.com/76cdfbb932f46815e57b5bc3a24de378/680dcbca/video/tos/cn/tos-cn-ve-15/oscgREeItAegeFQYmIIAsfAUDNQfLHH3Gx1u86/?a=1128&ch=0&cr=0&dr=0&er=0&cd=0%7C0%7C0%7C0&cv=1&br=172&bt=172&cs=2&ds=4&ft=QELByTDaffPdOP~-h1VNvAq-antLjrKt~TOCRka58sD_ejVhWL6&mime_type=video_mp4&qs=15&rc=OWVkaTdlZWQ6NjY1NzM1OEBpMzs6cnY5cjNxeDMzNGkzM0BgMWNgYWAwNmAxXy4yYDBgYSNoc25gMmRrLXJgLS1kLTBzcw%3D%3D&btag=c0000e000ad200&cquery=100y&dy_q=1745730911&feature_id=878fb589e872431af6a89a5a23ca701e&l=202504271315113F0092D37E40010BD307
+export HTTP_PROXY="http://127.0.0.1:7897"
+export HTTPS_PROXY="http://127.0.0.1:7897"
+export NO_PROXY="localhost,127.0.0.1"
+
+curl -v https://www.google.com

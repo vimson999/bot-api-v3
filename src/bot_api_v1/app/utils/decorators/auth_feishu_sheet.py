@@ -133,12 +133,13 @@ def require_feishu_signature(exempt: bool = False):
                     },
                     exc_info=True
                 )
-                return BaseResponse(
-                    code=500,
-                    message="签名验证过程中发生内部错误",
-                    data=None
-                )
-        
+                # return BaseResponse(
+                #     code=500,
+                #     message="签名验证过程中发生内部错误",
+                #     data=None
+                # )
+                raise
+
         return wrapper
     
     return decorator

@@ -47,7 +47,7 @@ class YtDLP_Service_Sync:
 
         # 新增：如果是tiktok，读取cookie文件
         if platform == "tiktok":
-            cookie_path = "/Users/v9/Documents/workspace/v9/code/bot-api-v1/src/bot_api_v1/app/config/cookies/tk.txt"
+            cookie_path = settings.TIKTOK_COOKIE_FILE
             if os.path.exists(cookie_path):
                 ydl_opts["cookiefile"] = cookie_path
             else:
@@ -63,8 +63,6 @@ class YtDLP_Service_Sync:
                 return None
 
             media_extract_format = Media_extract_format()
-            platform = media_extract_format._identify_platform(url)
-
             schema = {
                 "platform": platform,
                 "video_id": info.get("id", ""),
@@ -209,7 +207,18 @@ class YtDLP_Service_Sync:
             'socket_timeout': 60, 'retries': 3, 'http_chunk_size': 10 * 1024 * 1024
         }
 
+        media_extract_format = Media_extract_format()
+        platform = media_extract_format._identify_platform(url)
+        logger.debug(f'current platform: {platform}')
+        if platform == "tiktok":
+            cookie_path = settings.TIKTOK_COOKIE_FILE
+            if os.path.exists(cookie_path):
+                ydl_opts["cookiefile"] = cookie_path
+            else:
+                logger.warning(f"[{task_id}] tiktok平台未找到cookie文件: {cookie_path}", extra=log_extra)
+
         try:
+            logger.debug(f"[{task_id}] 使用的 ydl_opts: {ydl_opts}", extra=log_extra) # 添加这行日志
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 if info is None:
