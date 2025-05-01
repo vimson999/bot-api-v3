@@ -273,20 +273,25 @@ def create_xhs_schema(
 
     return info
 
-
-def create_bl_schema(
+def create_default_schema(
     basic_info: dict,
     transcribed_text: str):
     info = basic_info.copy()
     info["content"] = transcribed_text
+    logger.debug(f"create_default_schema -- transcribed_text is : {transcribed_text}")
 
     return info
+
+def create_bl_schema(
+    basic_info: dict,
+    transcribed_text: str):
+    return create_default_schema(basic_info, transcribed_text)
 
 
 def create_ks_schema(
     basic_info: dict,
     transcribed_text: str):
-    return create_bl_schema(basic_info, transcribed_text)
+    return create_default_schema(basic_info, transcribed_text)
 
 def create_schema(
     task_id: str,
@@ -307,8 +312,8 @@ def create_schema(
     elif platform == MediaPlatform.KUAISHOU:
         final_standard_data = create_ks_schema( basic_info, transcribed_text)
     else:
-        logger.error(f"[Task B {task_id=}] 未知的平台: {platform}", extra=log_extra)
-        final_standard_data = create_bl_schema( basic_info, transcribed_text)
+        # logger.error(f"[Task B {task_id=}] 未知的平台: {platform}", extra=log_extra)
+        final_standard_data = create_default_schema( basic_info, transcribed_text)
 
     return final_standard_data
 
