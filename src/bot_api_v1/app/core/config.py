@@ -1,5 +1,6 @@
 # src/bot_api_v1/app/core/config.py (已更新)
 
+from re import S
 from pydantic_settings import BaseSettings
 import os
 from typing import Optional, List, Dict, Any, Union
@@ -147,6 +148,8 @@ class Settings(BaseSettings):
     TIKTOK_COOKIE_FILE : str = os.getenv("TIKTOK_COOKIE_FILE","/Users/v9/Documents/workspace/v9/code/bot-api-v1/src/bot_api_v1/app/config/cookies/tk.txt")
 
     OPEN_ROUTER_API_KEY_QW : str = os.getenv("OPEN_ROUTER_API_KEY_QW","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")
+    OPEN_ROUTER_API_MODEL_QW : str = os.getenv("OPEN_ROUTER_API_MODEL_QW","qwen/qwen3-30b-a3b:free")
+    OPEN_ROUTER_API_URL : str = os.getenv("OPEN_ROUTER_API_URL","https://openrouter.ai/api/v1")
 
     # 其他配置 (保持不变)
 

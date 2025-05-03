@@ -14,6 +14,9 @@ from bot_api_v1.app.services.business import script_service_sync
 from bot_api_v1.app.utils.media_extrat_format import Media_extract_format
 from bot_api_v1.app.constants.media_info import MediaType
 from bot_api_v1.app.services.business.script_service_sync import ScriptService_Sync
+from bot_api_v1.app.services.business.open_router_service import OpenRouterService
+from openai import OpenAI
+
 
 class AudioDownloadError(Exception):
     """音频下载过程中出现的错误"""
@@ -293,7 +296,32 @@ class YtDLP_Service_Sync:
                 audio_path=actual_downloaded_path,
                 trace_id=task_id)
 
-            video_info["content"] = content.get("text")
+            content_text = content.get("text")
+            video_info["content"] = content_text
+
+            PROMPTS = {
+                "core": "请你化身**顶尖爆款视频策划人**，以制造刷屏级内容的敏锐嗅觉，审视并提炼出我给你文字中最具冲击力、最能引发用户共鸣和传播的核心观点/价值点。请用简洁精炼的语言，分点列出，并简要阐述每个观点**为何具备成为爆款的潜质**（例如：情感触发点、争议性、实用价值、新奇度、反差感等）。给你的文字是：",
+                "formula": "请你扮演一位**深谙传播之道的爆款视频操盘手**，对我给你的文字进行深度解剖，提炼总结出其中可被复用、可迁移的**“爆款密码”或“增长范式”**。请清晰阐述这个“范式”的关键组成部分（如：钩子设计、情绪曲线、价值点呈现节奏、互动引导策略、记忆点打造技巧等），并说明**如何将其巧妙应用于其他内容的创作中**，以显著提升引爆流行、实现增长的可能性。给你的文字是：",
+                "copywriting": """请你以**深谙小红书平台特性与用户心理的资深内容运营专家**身份，围绕我给你的文字，创作一篇**至少100字**、**极具“网感”和“种草力”**的小红书爆款笔记文案。要求：
+1.  **开头3秒吸睛**，瞬间抓住用户注意力。
+2.  **语言生动、场景化**，多使用**emoji**表情符号，营造沉浸式体验。
+3.  **价值点清晰、痛点共鸣**，巧妙植入核心信息。
+4.  **包含3-5个相关热门#话题标签#**，提升曝光潜力。
+5.  **结尾设置巧妙的互动引导**（如提问、投票、求助、号召行动等）。
+请产出**2-3个不同风格或侧重点的文案版本**，供我挑选优化。,给你的文字是：""",
+                "golden3s": """请你作为**精通“黄金三秒”法则、能瞬间点燃用户好奇心的爆款视频大师**，针对我给你的文字，构思**3-5个**能够在**视频开篇3秒内**就**牢牢锁住观众眼球、激发强烈观看欲望**的**创意开场方案**。请具体描述每个方案的：
+* **核心悬念/钩子**
+并简要阐述每个方案**为何能有效抓住注意力并驱动用户继续观看**。我给你的文字是：
+                """
+            }
+
+            openai_service = OpenRouterService()
+            for key in ["core", "formula", "copywriting", "golden3s"]:
+                role = PROMPTS[key]
+                ai_result = openai_service.get_ai_assistant_text(role, task_id, content_text, log_extra)
+                # 可根据 key 分类处理 ai_result
+
+            print(f'ai_assitent is {ai_result}')
 
         return video_info
 
