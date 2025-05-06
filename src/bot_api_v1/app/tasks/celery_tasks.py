@@ -13,7 +13,10 @@ from bot_api_v1.app.constants.media_info import MediaPlatform
 from pathlib import Path  # 推荐使用 pathlib 处理路径
 from bot_api_v1.app.tasks.celery_service_logic import prepare_media_for_transcription
 from bot_api_v1.app.services.business.script_service_sync import ScriptService_Sync
+from bot_api_v1.app.services.business.open_router_service import OpenRouterService
 from bot_api_v1.app.tasks.celery_app import celery_app
+
+
 
 # --- 保留之前的示例任务 (可选) ---
 @celery_app.task(name="tasks.add")
@@ -172,7 +175,9 @@ def create_douyin_schema(
     basic_info: dict,
     url: str,
     transcribed_text: str,
-    audio_duration: int
+    audio_duration: int,
+    ai_assistent_content : dict,
+    points : dict
 ):
     media_extract_format = Media_extract_format()
     basic_info = basic_info.get("data", {})  # 提取 video 字段
@@ -213,6 +218,8 @@ def create_douyin_schema(
             "height": basic_info.get("height", 0),  # 直接从顶层获取
             "quality": "normal"
         },
+        "ai_assistant_text": ai_assistent_content,
+        "points": points,
         
         "publish_time": media_extract_format._format_timestamp(basic_info.get("create_timestamp", 0)),
         "update_time": None
@@ -226,7 +233,9 @@ def create_xhs_schema(
     basic_info: dict,
     url: str,
     transcribed_text: str,
-    audio_duration: int
+    audio_duration: int,
+    ai_assistent_content : dict,
+    points : dict
 ):
     media_extract_format = Media_extract_format()
     info = {
@@ -266,7 +275,9 @@ def create_xhs_schema(
             "height": basic_info.get("media", {}).get("height", 0),
             "quality": "normal"
         },
-        
+        "ai_assistant_text": ai_assistent_content,
+        "points": points,
+
         "publish_time": media_extract_format._format_timestamp(basic_info.get("create_time", 0)),
         "update_time": media_extract_format._format_timestamp(basic_info.get("last_update_time", 0))
     }
@@ -275,23 +286,34 @@ def create_xhs_schema(
 
 def create_default_schema(
     basic_info: dict,
-    transcribed_text: str):
+    transcribed_text: str,
+    ai_assistent_content : dict,
+    points : dict):
     info = basic_info.copy()
     info["content"] = transcribed_text
+    info["ai_assistent_content"] = ai_assistent_content
+    info["points"] = points
+    
     logger.debug(f"create_default_schema -- transcribed_text is : {transcribed_text}")
+    logger.debug(f"create_default_schema -- ai_assistent_content is : {ai_assistent_content}")
+    logger.debug(f"create_default_schema -- points is : {points}")
 
     return info
 
 def create_bl_schema(
     basic_info: dict,
-    transcribed_text: str):
-    return create_default_schema(basic_info, transcribed_text)
+    transcribed_text: str,
+    ai_assistent_content : dict,
+    points : dict):
+    return create_default_schema(basic_info, transcribed_text,ai_assistent_content,points)
 
 
 def create_ks_schema(
     basic_info: dict,
-    transcribed_text: str):
-    return create_default_schema(basic_info, transcribed_text)
+    transcribed_text: str,
+    ai_assistent_content : dict,
+    points : dict):
+    return create_default_schema(basic_info, transcribed_text,ai_assistent_content,points)
 
 def create_schema(
     task_id: str,
@@ -300,20 +322,22 @@ def create_schema(
     url: str,
     transcribed_text: str,
     log_extra: dict,
-    audio_duration: int
+    audio_duration: int,
+    ai_assistent_content : dict,
+    points : dict
 ):
     if platform == MediaPlatform.DOUYIN:
         # 转换为统一结构
-        final_standard_data = create_douyin_schema(platform, basic_info, url, transcribed_text,audio_duration)
+        final_standard_data = create_douyin_schema(platform, basic_info, url, transcribed_text, audio_duration,ai_assistent_content,points)
     elif platform == MediaPlatform.XIAOHONGSHU:
-        final_standard_data = create_xhs_schema(platform, basic_info, url, transcribed_text,audio_duration)
+        final_standard_data = create_xhs_schema(platform, basic_info, url, transcribed_text,audio_duration,ai_assistent_content,points)
     elif platform == MediaPlatform.BILIBILI:
-        final_standard_data = create_bl_schema( basic_info, transcribed_text)
+        final_standard_data = create_bl_schema( basic_info, transcribed_text,ai_assistent_content,points)
     elif platform == MediaPlatform.KUAISHOU:
-        final_standard_data = create_ks_schema( basic_info, transcribed_text)
+        final_standard_data = create_ks_schema( basic_info, transcribed_text,ai_assistent_content,points)
     else:
         # logger.error(f"[Task B {task_id=}] 未知的平台: {platform}", extra=log_extra)
-        final_standard_data = create_default_schema( basic_info, transcribed_text)
+        final_standard_data = create_default_schema( basic_info, transcribed_text,ai_assistent_content,points)
 
     return final_standard_data
 
@@ -428,6 +452,18 @@ def run_transcription_task(
             # 2.2 调用格式化函数
             try:
                 transcribed_text = transcription_result_dict.get("text")
+                open_router_service = OpenRouterService()
+                ai_assistent = open_router_service.get_ai_assistant_text(task_id=task_id, origin_content=transcribed_text, log_extra=log_extra)
+                ai_assistent_content = {}
+                if ai_assistent.get("status") == "success":
+                    logger.info(f"[Task B {task_id=}] ai_assistent is {ai_assistent}", extra=log_extra)
+                    ai_assistent_content = ai_assistent.get("content")
+
+                points = {
+                    "total_required": total_required,
+                    "user_available_points": user_available_points
+                }
+
                 final_standard_data = create_schema(
                     task_id=task_id,
                     basic_info=basic_info,
@@ -435,7 +471,9 @@ def run_transcription_task(
                     url=url,
                     transcribed_text=transcribed_text,
                     log_extra=log_extra,
-                    audio_duration=audio_duration
+                    audio_duration=audio_duration,
+                    ai_assistent_content = ai_assistent_content,
+                    points = points
                 )
 
                 # 2.4 构建 Task B 的最终成功返回值

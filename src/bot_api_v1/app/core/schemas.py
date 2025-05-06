@@ -59,6 +59,17 @@ class MediaStatistics(BaseModel):
     collect_count: Optional[int] = Field(None, description="收藏数")
     play_count: Optional[int] = Field(None, description="播放数")
 
+
+class Points(BaseModel):
+    total_required: Optional[int] = Field(None, description="消耗积分数")
+    user_available_points: Optional[int] = Field(None, description="剩余积分数")
+
+class AIASSITENT(BaseModel):
+    core: Optional[str] = Field(None, description="文案核心")
+    formula: Optional[str] = Field(None, description="文案爆款公式")
+    golden3s: Optional[str] = Field(None, description="文案黄金三秒")
+    copywriting: Optional[str] = Field(None, description="小红书文案")
+
 class MediaInfo(BaseModel):
     cover_url: Optional[str] = Field(None, description="封面URL")
     video_url: Optional[str] = Field(None, description="视频URL")
@@ -87,6 +98,8 @@ class MediaContentResponse(BaseModel):
     author: MediaAuthor = Field(..., description="作者信息")
     statistics: MediaStatistics = Field(..., description="统计信息")
     media: MediaInfo = Field(..., description="媒体信息")
+    ai_assistant_text: AIASSITENT = Field(..., description="AI助手生成的文案")
+    points: Points = Field(..., description="用户积分信息")
     publish_time: Optional[datetime] = Field(None, description="发布时间")
     update_time: Optional[datetime] = Field(None, description="更新时间")
 
