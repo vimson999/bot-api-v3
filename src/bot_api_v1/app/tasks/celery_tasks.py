@@ -291,7 +291,7 @@ def create_default_schema(
     points : dict):
     info = basic_info.copy()
     info["content"] = transcribed_text
-    info["ai_assistent_content"] = ai_assistent_content
+    info["ai_assistant_text"] = ai_assistent_content
     info["points"] = points
     
     logger.debug(f"create_default_schema -- transcribed_text is : {transcribed_text}")

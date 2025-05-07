@@ -284,7 +284,8 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
         user_name = request_ctx.get_user_name()
         ip_address = request.client.host if request.client else "unknown_ip"
         root_trace_key = request_ctx.get_root_trace_key()
-        log_extra = {"request_id": trace_key, "celery_task_id": task_id, "user_id": user_id,"root_trace_key":root_trace_key}
+        platform = ''
+        log_extra = {"request_id": trace_key, "celery_task_id": task_id, "user_id": user_id,"root_trace_key":root_trace_key,"platform":platform}
     except Exception as ctx_err:
         # 如果连上下文都获取失败，记录严重错误并返回
         logger.critical(f"获取请求上下文失败: {ctx_err}", exc_info=True)
