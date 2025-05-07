@@ -4,6 +4,7 @@ from typing import Dict, Any, Optional, Union # 添加 Union
 from datetime import datetime
 import uuid
 import re
+import traceback
 
 import httpx
 from fastapi import Header
