@@ -227,7 +227,24 @@ class RedisCache:
         """创建缓存键"""
         hashed_key = hashlib.md5(value.encode()).hexdigest()
         return f"{prefix}:{hashed_key}"
-    
+
+
+    @staticmethod
+    def del_key(key: str) -> bool:
+        """从Redis中删除指定的缓存键"""
+        redis_client = get_redis_client()
+        if not redis_client:
+            logger.warning("Redis客户端不可用，无法删除缓存")
+            return False
+        try:
+            redis_client.delete(key)
+            logger.debug(f"已从Redis中删除缓存: Key={key}")
+            return True
+        except Exception as e:
+            logger.error(f"从Redis删除缓存时发生错误: {e}", exc_info=True)
+            return False
+
+
     @staticmethod
     def get(key: str) -> Optional[dict]:
         """从Redis获取缓存值并解析JSON"""

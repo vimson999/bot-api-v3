@@ -71,6 +71,15 @@ curl -X GET "http://localhost:8083/api/health"\
 
 
 
+  curl -X GET "http://localhost:8000/api/media/dc/"\
+  -H "Content-Type: application/json" \
+  -H "x-source: v9-mac-book" \
+  -H "x-app-id: local-test" \
+  -H "x-user-uuid: user-v999" \
+  -H "x-user-nickname: 你说呢"
+
+
+
   curl -X GET "http://42.192.40.44/api/health"\
   -H "Content-Type: application/json" \
   -H "x-source: v9-mac-book" \
@@ -671,6 +680,7 @@ curl -X POST "https://www.xiaoshanqing.tech/api/media/extract" \
 
 
 
+curl -X POST "http://127.0.0.1:8083/api/media/dc?url=https://www.kuaishou.com/f/X-6tJ5drN7B0eeHD"
 
 
 curl -X POST "http://localhost:8000/api/media/extract" \
@@ -868,3 +878,4 @@ https://ycn0x2weafez.feishu.cn/wiki/L7fowrTE2ilbpDkGVvfcXWWdnRg?table=tblsqLAMgl
 
 
 http://101.35.56.140:3000/login?redirectTo=%2Fexplore%3FschemaVersion%3D1%26panes%3D%257B%2522ya1%2522%253A%257B%2522datasource%2522%253A%2522eejrh83w7sxkwf%2522%252C%2522queries%2522%253A%255B%257B%2522refId%2522%253A%2522A%2522%252C%2522expr%2522%253A%2522%257Binstance%253D%255C%2522fastapi_app%255C%2522%257D%2B%257C%253D%2B%2560%2560%2522%252C%2522queryType%2522%253A%2522range%2522%252C%2522datasource%2522%253A%257B%2522type%2522%253A%2522loki%2522%252C%2522uid%2522%253A%2522eejrh83w7sxkwf%2522%257D%252C%2522editorMode%2522%253A%2522builder%2522%252C%2522direction%2522%253A%2522backward%2522%257D%255D%252C%2522range%2522%253A%257B%2522from%2522%253A%2522now-3h%2522%252C%2522to%2522%253A%2522now%2522%257D%252C%2522panelsState%2522%253A%257B%2522logs%2522%253A%257B%2522visualisationType%2522%253A%2522logs%2522%252C%2522columns%2522%253A%257B%25220%2522%253A%2522Time%2522%252C%25221%2522%253A%2522Line%2522%252C%25222%2522%253A%2522host%2522%252C%25223%2522%253A%2522instance%2522%252C%25224%2522%253A%2522job%2522%257D%252C%2522labelFieldName%2522%253A%2522labels%2522%252C%2522refId%2522%253A%2522A%2522%257D%257D%257D%257D%26orgId%3D1
+

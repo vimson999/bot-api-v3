@@ -1,7 +1,7 @@
 from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.core.logger import logger
 from openai import OpenAI
-
+import time
 
 class OpenRouterService:
     def __init__(self):
@@ -53,29 +53,39 @@ class OpenRouterService:
 
             ai_dict = {}
             for key in ["core", "formula", "copywriting", "golden3s"]:
-                try:
-                    play = PROMPTS[key]
-                    completion = self.client.chat.completions.create(
-                        extra_headers={
-                            "HTTP-Referer": "xiaoshanqing",
-                            "X-Title": "xiao",
-                        },
-                        extra_body={},
-                        model=self.model,
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": f"{play}"
-                            }
-                        ]
-                    )
+                retry_count = 3
+                for attempt in range(retry_count):
+                    try:
+                        play = PROMPTS[key]
+                        completion = self.client.chat.completions.create(
+                            extra_headers={
+                                "HTTP-Referer": "xiaoshanqing",
+                                "X-Title": "xiao",
+                            },
+                            extra_body={},
+                            model=self.model,
+                            messages=[
+                                {
+                                    "role": "user",
+                                    "content": f"{play}"
+                                }
+                            ]
+                        )
 
-                    content = completion.choices[0].message.content if completion and completion.choices else ""
-                    logger.info(f'ai_assitent role {key} result {content}')
-
-                    ai_dict[key] = content
-                except Exception as e:
-                    logger.info(f"调用 OpenAI API 时发生异常: {e}")
+                        content = completion.choices[0].message.content if completion and completion.choices else ""
+                        if content:
+                            logger.info(f'ai_assitent role {key} result {content}')
+                            ai_dict[key] = content
+                            break  # 成功则跳出重试循环
+                        else:
+                            logger.warning(f"第{attempt+1}次请求OpenAI API返回空内容，role={key}", extra=log_extra)
+                    except Exception as e:
+                        logger.info(f"第{attempt+1}次调用 OpenAI API 时发生异常: {e}")
+                    
+                    if attempt < retry_count - 1:
+                        time.sleep(2)  # 等待2秒后重试
+                else:
+                    ai_dict[key] = ""
             
             logger.info(f"[{task_id}] get_ai_assistant_text: AI返回内容={ai_dict}", extra=log_extra)
             return {"status": "success", "content": ai_dict}
