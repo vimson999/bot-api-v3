@@ -124,9 +124,17 @@ class Settings(BaseSettings):
     ).split(",")
 
     # 微信相关配置 (保持不变)
+    # WECHAT_MP_TOKEN: str = os.getenv("WECHAT_MP_TOKEN", "vims32keyLilymvpabc12")  
+    # WECHAT_MP_APPID: str = os.getenv("WECHAT_MP_APPID", "wxd5b92e8f6f424d09")
+    # WECHAT_MP_SECRET: str = os.getenv("WECHAT_MP_SECRET", "dd7f200be2e3ddce83a5dffb069b9fa5")
+
     WECHAT_MP_TOKEN: str = os.getenv("WECHAT_MP_TOKEN", "vims32keyLilymvpabc12")  
-    WECHAT_MP_APPID: str = os.getenv("WECHAT_MP_APPID", "wxd5b92e8f6f424d09")
-    WECHAT_MP_SECRET: str = os.getenv("WECHAT_MP_SECRET", "dd7f200be2e3ddce83a5dffb069b9fa5")
+    WECHAT_MP_APPID: str = os.getenv("WECHAT_MP_APPID", "wxa690d4c27e35c4a2")
+    WECHAT_MP_SECRET: str = os.getenv("WECHAT_MP_SECRET", "cf9b6d593bf43a609261e858548f2588")
+    WECHAT_MP_ENCODINGAESKEY: str = os.getenv("WECHAT_MP_ENCODINGAESKEY", "vnCp3XQ8nE7Iw5n4kDieXzuGxoFFgWa5o1mbEM97Dbv")
+    WECHAT_MERCHANT_ID: str = os.getenv("WECHAT_MERCHANT_ID","1716724012")
+
+
     CURRENT_WECHAT_MP_MENU_VERSION: int = int(os.getenv("CURRENT_WECHAT_MP_MENU_VERSION", "0"))
     TARGET_WECHAT_MP_MENU_VERSION: int = int(os.getenv("TARGET_WECHAT_MP_MENU_VERSION", "1"))
     WECHAT_MINI_APPID: str = os.getenv("WECHAT_MINI_APPID", "")
@@ -134,7 +142,11 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", secrets.token_urlsafe(32))
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_DAYS: int = int(os.getenv("JWT_EXPIRATION_DAYS", "7"))
-    WECHAT_MERCHANT_KEY: str = os.getenv("WECHAT_MERCHANT_KEY", "")
+
+    WECHAT_MERCHANT_KEY: str = os.getenv("WECHAT_MERCHANT_KEY", "7wPzL9qS2mN5hG1dF8cVbJ0rX3kA6tYe")
+    WECHAT_MERCHANT_APIV2: str = os.getenv("WECHAT_MERCHANT_APIV2", "7wPzL9qS2mN5hG1dF8cVbJ0rX3kA6tYe")
+    WECHAT_MERCHANT_APIV3: str = os.getenv("WECHAT_MERCHANT_APIV3", "Zq5K9xP1mJ0rD7vS3cT8wA2hL6gN4fYb")
+    WECHAT_MERCHANT_PUBKEY: str = os.getenv("WECHAT_MERCHANT_PUBKEY", "PUB_KEY_ID_0117167240122025051300451926000601")
 
     # URL 配置 (保持不变)
     DOMAIN_API_URL : str = os.getenv("DOMAIN_API_URL", "http://iw6i1vjj93ml.guyubao.com")

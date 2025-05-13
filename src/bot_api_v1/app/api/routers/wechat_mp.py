@@ -5,6 +5,7 @@
 """
 from typing import Dict, Any, Optional
 import json
+import os
 
 
 from bot_api_v1.app.services.business.user_service import UserService
@@ -23,7 +24,7 @@ from bot_api_v1.app.services.business.product_service import ProductService
 
 from bot_api_v1.app.utils.decorators.tollgate import TollgateConfig
 
-from fastapi import Query, HTTPException
+from fastapi import APIRouter, Request, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 import hashlib
 import xml.etree.ElementTree as ET
@@ -32,6 +33,16 @@ import urllib.parse
 from fastapi.responses import RedirectResponse
 from bot_api_v1.app.core.config import settings
 
+
+# --- 新增：微信加密相关 ---
+from wechatpy.crypto import WeChatCrypto
+from wechatpy.utils import check_signature # 用于GET请求验证
+
+try:
+    crypt_handler = WeChatCrypto(settings.WECHAT_MP_TOKEN, settings.WECHAT_MP_ENCODINGAESKEY, settings.WECHAT_MP_APPID)
+except Exception as e:
+    logger.error(f"初始化微信加密处理器失败: {e}")
+    crypt_handler = None # 应该阻止应用启动或妥善处理
 
 router = APIRouter(prefix='/wechat_mp',  tags=["微信公众号"])
 
@@ -65,19 +76,77 @@ user_service = UserService()
 )
 async def wechat_mp_callback(
     request: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    msg_signature: str = Query(..., description="微信加密签名"), # 从查询参数获取
+    timestamp: str = Query(..., description="时间戳"),         # 从查询参数获取
+    nonce: str = Query(..., description="随机数")             # 从查询参数获取
 ):
     """
     处理微信公众号事件回调
     """
     trace_key = request_ctx.get_trace_key()
     
+    if not crypt_handler:
+        logger.error("微信加密处理器未初始化，无法处理回调", extra={"request_id": trace_key})
+        # 根据微信要求，即使处理失败也应尽量返回"success"或空字符串，避免微信重试轰炸
+        # 但这里是严重配置问题，也可以考虑返回500错误
+        return PlainTextResponse(content="success") # 或者抛出内部错误
+
     try:
+        # 1. 读取加密的请求体
+        encrypted_xml_data = await request.body()
+
+        # 2. 解密消息
+        try:
+            decrypted_xml = crypt_handler.decrypt_message(
+                msg=encrypted_xml_data.decode('utf-8'), # wechatpy 需要 str 类型
+                signature=msg_signature,
+                timestamp=timestamp,
+                nonce=nonce
+            )
+        except (InvalidSignatureException, InvalidAppIdException) as crypto_err:
+            logger.error(
+                f"微信消息解密或签名验证失败: {crypto_err}",
+                extra={
+                    "request_id": trace_key,
+                    "msg_signature": msg_signature,
+                    "timestamp": timestamp,
+                    "nonce": nonce
+                }
+            )
+            # 微信建议即使解密失败也返回空字符串或"success"
+            # 也可以选择抛出HTTP 403/400，但要注意微信的重试机制
+            # 此处为了调试和明确问题，暂时返回错误，实际部署时可能需要调整
+            raise CustomException(
+                status_code=400, # 或403
+                message=f"消息解密或签名验证失败: {crypto_err}",
+                code="decryption_or_signature_failed"
+            )
+
         # Read and parse XML data
-        xml_data = await request.body()
-        root = ET.fromstring(xml_data)
+        # xml_data = await request.body()
+        # root = ET.fromstring(xml_data)
+        # event_data = {child.tag: child.text for child in root}
+
+        root = ET.fromstring(decrypted_xml)
         event_data = {child.tag: child.text for child in root}
-        
+        logger.info(f"解密后的事件数据: {event_data}", extra={"request_id": trace_key})
+
+
+        # Check required fields before model validation
+        required_fields = ["ToUserName", "FromUserName", "CreateTime", "MsgType", "Event"]
+        missing_fields = [field for field in required_fields if field not in event_data]
+        if missing_fields:
+            logger.error(
+                f"Missing required fields in WechatMpEvent: {missing_fields}",
+                extra={"request_id": trace_key, "event_data": event_data}
+            )
+            raise CustomException(
+                status_code=400,
+                message=f"Missing required fields: {', '.join(missing_fields)}",
+                code="missing_fields"
+            )
+
         # Convert to WechatMpEvent model
         event = WechatMpEvent(**event_data)
         
@@ -120,6 +189,14 @@ async def wechat_mp_callback(
                 extra={"request_id": trace_key, "openid": event.FromUserName}
             )
             return PlainTextResponse(content="success")  
+    except CustomException as ce:
+        # Log and re-raise known custom exceptions
+        logger.error(
+            f"处理微信公众号事件时发生已知错误: {ce.message}", 
+            exc_info=True,
+            extra={"request_id": trace_key}
+        )
+        raise ce
     except Exception as e:
         logger.error(
             f"处理微信公众号事件时发生未知错误: {str(e)}", 
@@ -349,6 +426,13 @@ async def create_order(
     description="微信支付页面",
     summary="微信支付页面"
 )
+@TollgateConfig(
+    title="微信支付页面",
+    type="wechat_mp_pay_order",
+    base_tollgate="20",
+    current_tollgate="1",
+    plat="wechat_mp"
+)
 async def payment_page(
     order_id: str = Query(..., description="订单ID"),
     token: str = Query(..., description="用户令牌"),
@@ -394,10 +478,6 @@ async def payment_page(
             extra={"request_id": trace_key}
         )
         return RedirectResponse(url=f"/static/html/error.html?message=支付页面加载失败")
-
-
-
-# ... 现有代码 ...
 
 
 @router.get(
@@ -525,3 +605,86 @@ async def trigger_wechat_menu_update(
             message=f"菜单更新失败: {str(e)}",
             data=None
         )
+
+### 2. 微信支付结果通知 `/api/wechat_mp/payment/notify`
+
+@router.post(
+    "/payment/notify",
+    description="微信支付结果通知",
+    summary="微信支付异步通知"
+)
+async def payment_notify(
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    微信支付结果异步通知
+    """
+    try:
+        xml_data = await request.body()
+        root = ET.fromstring(xml_data)
+        notify_data = {child.tag: child.text for child in root}
+        logger.info_to_db(f"payment---notify---收到微信支付通知: {notify_data}")
+
+        # 校验签名（可选，建议实现）
+        # sign = notify_data.get("sign")
+        # ...签名校验逻辑...
+
+        # 处理支付结果
+        if notify_data.get("return_code") == "SUCCESS" and notify_data.get("result_code") == "SUCCESS":
+            out_trade_no = notify_data.get("out_trade_no")
+            # 更新订单状态为已支付
+            await order_service.update_order_status_by_no(out_trade_no, 2, db=db)  # 2=已支付
+            logger.info(f"订单{out_trade_no}支付成功，已更新状态")
+            # 返回微信要求的XML
+            return PlainTextResponse(
+                content="<xml><return_code><![CDATA[SUCCESS]]></return_code><return_msg><![CDATA[OK]]></return_msg></xml>",
+                media_type="application/xml"
+            )
+        else:
+            logger.warning(f"支付失败或异常: {notify_data}")
+            return PlainTextResponse(
+                content="<xml><return_code><![CDATA[FAIL]]></return_code><return_msg><![CDATA[支付失败]]></return_msg></xml>",
+                media_type="application/xml"
+            )
+    except Exception as e:
+        logger.error(f"处理微信支付通知失败: {str(e)}")
+        return PlainTextResponse(
+            content="<xml><return_code><![CDATA[FAIL]]></return_code><return_msg><![CDATA[服务器异常]]></return_msg></xml>",
+            media_type="application/xml"
+        )
+
+
+
+@router.get(
+    "/pay_success",
+    description="支付成功页面跳转",
+    summary="支付成功页面"
+)
+@TollgateConfig(
+    title="支付成功页面",
+    type="wechat_mp_pay_success",
+    base_tollgate="20",
+    current_tollgate="1",
+    plat="wechat_mp"
+)
+async def pay_success(
+    order_id: str = Query(..., description="订单ID"),
+    token: str = Query(..., description="用户令牌"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    支付成功页面跳转
+    """
+    try:
+        # 可选：校验token和订单归属
+        user_info = await wechat_service.verify_token(token, db)
+        order_info = await order_service.get_order_info(order_id, db)
+        if not order_info or str(order_info.user_id) != user_info["user_id"]:
+            return RedirectResponse(url=f"/static/html/error.html?message=订单不存在或无权访问")
+        # 跳转到支付成功静态页面
+        return RedirectResponse(url=f"/static/html/pay_success.html?order_id={order_id}")
+    except Exception as e:
+        logger.error(f"支付成功跳转失败: {str(e)}")
+        return RedirectResponse(url=f"/static/html/error.html?message=支付成功页面加载失败")
+

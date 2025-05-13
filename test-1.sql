@@ -72,7 +72,7 @@ curl -X GET "http://localhost:8083/api/health"\
 
 
   curl -X GET "http://localhost:8000/api/media/dc/"\
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" \-
   -H "x-source: v9-mac-book" \
   -H "x-app-id: local-test" \
   -H "x-user-uuid: user-v999" \
@@ -639,6 +639,7 @@ curl -X POST "http://localhost:8000/api/douyin/user/info" \
   -d '{"user_id": "MS4wLjABAAAAFec6xaVDCLvpqpB-Vd4_qsTgwFlJM1Y2r_ZSoFGHRG8t7wa1vCK1tDnmL_s22_mD"}'
 
 
+
 curl -X GET "http://localhost:8083/api/media/test/xhs_sync?extract_text=true" \
   -H "Content-Type: application/json" \
   -H "X-Auth-Key: your_auth_key_here"
@@ -681,6 +682,7 @@ curl -X POST "https://www.xiaoshanqing.tech/api/media/extract" \
 
 
 curl -X POST "http://127.0.0.1:8083/api/media/dc?url=https://www.kuaishou.com/f/X-6tJ5drN7B0eeHD"
+curl -X POST "http://42.192.40.44/api/media/dc?url=https://www.kuaishou.com/f/X-6tJ5drN7B0eeHD"
 
 
 curl -X POST "http://localhost:8000/api/media/extract" \
@@ -879,3 +881,35 @@ https://ycn0x2weafez.feishu.cn/wiki/L7fowrTE2ilbpDkGVvfcXWWdnRg?table=tblsqLAMgl
 
 http://101.35.56.140:3000/login?redirectTo=%2Fexplore%3FschemaVersion%3D1%26panes%3D%257B%2522ya1%2522%253A%257B%2522datasource%2522%253A%2522eejrh83w7sxkwf%2522%252C%2522queries%2522%253A%255B%257B%2522refId%2522%253A%2522A%2522%252C%2522expr%2522%253A%2522%257Binstance%253D%255C%2522fastapi_app%255C%2522%257D%2B%257C%253D%2B%2560%2560%2522%252C%2522queryType%2522%253A%2522range%2522%252C%2522datasource%2522%253A%257B%2522type%2522%253A%2522loki%2522%252C%2522uid%2522%253A%2522eejrh83w7sxkwf%2522%257D%252C%2522editorMode%2522%253A%2522builder%2522%252C%2522direction%2522%253A%2522backward%2522%257D%255D%252C%2522range%2522%253A%257B%2522from%2522%253A%2522now-3h%2522%252C%2522to%2522%253A%2522now%2522%257D%252C%2522panelsState%2522%253A%257B%2522logs%2522%253A%257B%2522visualisationType%2522%253A%2522logs%2522%252C%2522columns%2522%253A%257B%25220%2522%253A%2522Time%2522%252C%25221%2522%253A%2522Line%2522%252C%25222%2522%253A%2522host%2522%252C%25223%2522%253A%2522instance%2522%252C%25224%2522%253A%2522job%2522%257D%252C%2522labelFieldName%2522%253A%2522labels%2522%252C%2522refId%2522%253A%2522A%2522%257D%257D%257D%257D%26orgId%3D1
 
+
+
+
+http://iw6i1vjj93ml.guyubao.com/api/wechat_mp/callback
+
+iw6i1vjj93ml.guyubao.com
+
+
+
+'<xml>
+  <appid>wxa690d4c27e35c4a2</appid>
+  <mch_id>1716724012</mch_id>
+  <nonce_str>fc7ae356df8bbb880a5572f8aa0ffaa5</nonce_str>
+  <body>88折 | 基础积分包 | 1000 积分 | 限时优惠 | 购买即可获得1000积分</body>
+  <out_trade_no>WX17471201751220</out_trade_no>
+  <total_fee>1</total_fee>
+  <spbill_create_ip>127.0.0.1</spbill_create_ip>
+  <notify_url>http://iw6i1vjj93ml.guyubao.com/api/wechat_mp/payment/notify</notify_url>
+  <trade_type>JSAPI</trade_type>
+  <openid>oFpP87CXMDD5_v0fZUBbchDBNhH8</openid>
+  <sign>C98ACBB21A5C5C6F69CF660529C28377</sign>
+</xml>'
+
+{'return_code': 'SUCCESS', 
+'return_msg': 'OK', 
+'result_code': 'SUCCESS', 
+'mch_id': '1716724012', 
+'appid': 'wxa690d4c27e35c4a2',
+ 'nonce_str': '5UnbrwT4i4bSuGkU', 
+ 'sign': 'C18A80FD655C21B0AF1A931D87BD4846', 
+ 'prepay_id': 'wx13151205631395cd4492461bdfa2870000', '
+ trade_type': 'JSAPI'}

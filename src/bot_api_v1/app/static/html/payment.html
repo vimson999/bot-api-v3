@@ -209,17 +209,17 @@
 
         function onBridgeReady(params) {
             // 添加更详细的调试信息
-            alert('onBridgeReady go');
-            alert(JSON.stringify(params));
+            // alert('onBridgeReady go');
+            // alert(JSON.stringify(params));
             
             // 检查total_fee参数类型
-            alert('total_fee类型: ' + typeof params.total_fee);
+            // alert('total_fee类型: ' + typeof params.total_fee);
             
             // 尝试转换参数格式
             let fixedParams = {...params};
             if (typeof fixedParams.total_fee === 'number' && fixedParams.total_fee < 1) {
                 fixedParams.total_fee = Math.round(fixedParams.total_fee * 100);
-                alert('已将total_fee转换为分: ' + fixedParams.total_fee);
+                // alert('已将total_fee转换为分: ' + fixedParams.total_fee);
             }
             
             WeixinJSBridge.invoke(
@@ -227,7 +227,7 @@
                 fixedParams,  // 使用修复后的参数
                 function(res) {
                     // 添加更详细的错误信息
-                    alert('支付结果: ' + res.err_msg);
+                    // alert('支付结果: ' + res.err_msg);
                     
                     if (res.err_msg === "get_brand_wcpay_request:ok") {
                         // 支付成功

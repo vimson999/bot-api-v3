@@ -880,7 +880,7 @@ class WechatService:
         self, 
         access_token: str, 
         openid: str, 
-        template_id: str = '0QbSRPz7YAIWxtgcNmC4SxrEEXlpOyji33zkKDQ6Xnc'
+        template_id: str = 'nEM5TKmzJ6IYNDpCk4Yr56bIcrIRquaHaXyKR6dleXU'
     ):
         """
         发送欢迎模板消息
@@ -1078,7 +1078,8 @@ class WechatService:
         encoded_uri = quote(product_list_path, safe='')      
         # 构建完整的菜单URL
         menu_url = f"https://open.weixin.qq.com/connect/oauth2/authorize?appid={self.mp_id}&redirect_uri={encoded_uri}&response_type=code&scope=snsapi_userinfo&state=shop#wechat_redirect"
-
+        logger.info(f"menu_url: {menu_url}")
+        
         # 定义菜单结构
         menu_data = {
             "button": [
@@ -1094,17 +1095,18 @@ class WechatService:
                             "type": "click",
                             "name": "领福利",
                             "key": "GET_BENEFITS"
-                        },
-                        {
-                            "type": "click",
-                            "name": "爷充值",
-                            "key": "RECHARGE"
-                        },
-                        {
-                            "type": "view",
-                            "name": "土豪通道",
-                            "url": menu_url
                         }
+                        # ,
+                        # {
+                        #     "type": "click",
+                        #     "name": "爷充值",
+                        #     "key": "RECHARGE"
+                        # },
+                        # {
+                        #     "type": "view",
+                        #     "name": "土豪通道",
+                        #     "url": menu_url
+                        # }
                     ]
                 },
                 {
@@ -1134,6 +1136,17 @@ class WechatService:
                             "type": "click",
                             "name": "飞书表格",
                             "key": "FEISHU_SHEET"
+                        }
+                        ,
+                        {
+                            "type": "click",
+                            "name": "爷充值",
+                            "key": "RECHARGE"
+                        },
+                        {
+                            "type": "view",
+                            "name": "土豪通道",
+                            "url": menu_url
                         }
                     ]
                 }
@@ -1522,7 +1535,7 @@ class WechatService:
             # 构建统一下单请求参数
             unifiedorder_data = {
                 "appid": self.mp_id,
-                # "mch_id": settings.WECHAT_MERCHANT_ID,  # 商户号
+                "mch_id": settings.WECHAT_MERCHANT_ID,  # 商户号
                 "nonce_str": nonce_str,
                 "body": f"{product_name}",  # 商品描述
                 "out_trade_no": order_info.order_no,  # 商户订单号
