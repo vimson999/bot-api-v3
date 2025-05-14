@@ -61,6 +61,7 @@ sync_engine = create_engine(
     pool_size=settings.DB_POOL_SIZE,
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
+    pool_timeout=settings.DB_POOL_TIMEOUT,
     connect_args={
         "application_name": f"{settings.PROJECT_NAME}-{settings.ENVIRONMENT}-sync"
     }

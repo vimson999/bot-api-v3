@@ -33,7 +33,7 @@ class Settings(BaseSettings):
     DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "5"))
     DB_MAX_OVERFLOW: int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
     DB_POOL_RECYCLE: int = int(os.getenv("DB_POOL_RECYCLE", "900"))
-    DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "10"))
+    DB_POOL_TIMEOUT: int = int(os.getenv("DB_POOL_TIMEOUT", "120"))
     DB_IDLE_TRANSACTION_TIMEOUT: int = int(os.getenv("DB_IDLE_TRANSACTION_TIMEOUT", "300"))
     DB_TRACE_SESSIONS: bool = os.getenv("DB_TRACE_SESSIONS", "true").lower() == "true"
     DB_POOL_USAGE_WARNING_THRESHOLD: float = float(os.getenv("DB_POOL_USAGE_WARNING_THRESHOLD", "0.7"))

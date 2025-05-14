@@ -969,7 +969,7 @@ class WechatService:
             elif event_key == "GET_BENEFITS":
                 return await self._handle_get_benefits(openid, db)
             elif event_key == "RECHARGE":
-                return "小爷您稍后，2025年4月10日之前首次点击【领福利】免费送您1000积分，不够您再留言，10号之后开放充值。"
+                return "2025年首次点击【领福利】免费送您1000积分，试用后可通过充值获得积分。"
             elif event_key == "QUERY_API_KEY":
                 api_key_info = await self._get_user_api_key_info(openid, db)
                 if api_key_info:
