@@ -114,28 +114,17 @@ async def clean_url(text: str) -> Optional[str]:
         return None
 
 
-# --- 修改后的 /extract 端点 ---
-@router.post(
-    "/extract",
-    # 由于响应模型根据输入动态变化，这里不显式指定 response_model
-    # 或者使用更复杂的 Union 类型，但 OpenAPI 可能不支持很好
-    # 将在代码中根据情况返回不同模型和状态码
-    summary="提取媒体内容(智能同步/异步)", # 添加 summary
-    description="如果 extract_text=false，同步返回基础信息(200 OK)。如果 extract_text=true，提交异步任务并返回任务ID(202 Accepted)。",
-    tags=["媒体服务"]
-)
-@TollgateConfig(title="提取媒体内容(智能同步/异步)", type="media", base_tollgate="10", current_tollgate="1", plat="api")
-@require_feishu_signature()
-@require_auth_key()
-async def extract_media_content_smart(
+
+# 公共方法
+async def _extract_media_content_common(
     request: Request,
     extract_request: MediaExtractRequest,
-    db: AsyncSession = Depends(get_db) # 保留 DB 依赖，因为同步路径和状态更新可能需要
+    db: AsyncSession,
+    require_feishu_sign: bool = True
 ):
     """
-    提取媒体内容信息。
-    如果 extract_text=False，同步返回基础信息。
-    如果 extract_text=True，提交异步任务并返回任务ID。
+    提取媒体内容信息的公共方法。
+    require_feishu_sign: 是否需要校验飞书签名（仅用于日志/上下文区分）
     """
     # 优先使用请求上下文，提供默认值
     trace_key = request_ctx.get_trace_key()
@@ -150,7 +139,7 @@ async def extract_media_content_smart(
         trace_id=trace_key, app_id=app_id, source=source, user_id=user_id,
         user_name=user_name, ip=ip_address, timestamp=datetime.now()
     )
-    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id,"root_trace_key":root_trace_key}
+    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id, "root_trace_key": root_trace_key, "feishu_sign": require_feishu_sign}
 
     logger.info_to_db(
         f"接收媒体提取请求(Smart) begin: url={extract_request.url}, extract_text={extract_request.extract_text}",
@@ -166,67 +155,57 @@ async def extract_media_content_smart(
         # --- 旧通道：同步执行 ---
         logger.debug("不抓文案只抓基本信息,执行同步提取 (extract_text=False)", extra=log_extra)
         try:
-            # 调用现有的 MediaService 方法 (假设它在 extract_text=False 时足够快)
             media_content = await media_service.extract_media_content(
-                 url=cleaned_url,
-                 extract_text=False, # 显式传递 False
-                 include_comments=extract_request.include_comments
-             )
-
+                url=cleaned_url,
+                extract_text=False,
+                include_comments=extract_request.include_comments
+            )
             response_data = MediaExtractResponse(
                 code=200,
                 message="成功提取媒体基础信息",
                 data=MediaContentResponse(**media_content) if media_content else None,
                 request_context=request_context
             )
-            
             logger.debug("不抓文案只抓基本信息,执行同步提取 (extract_text=False)结束,response_data is {response_data}", extra=log_extra)
-            # 返回标准的 200 OK 响应
             return response_data
-
         except Exception as e:
             logger.error(f"同步提取媒体基础信息失败: {str(e)}", exc_info=True, extra=log_extra)
             status_code = 404 if isinstance(e, MediaError) else 500
             detail = f"无法提取媒体内容: {str(e)}" if isinstance(e, MediaError) else f"处理请求时发生错误: {str(e)}"
             raise HTTPException(status_code=status_code, detail=detail)
-
     else:
         # --- 新通道：提交异步任务 ---
         logger.info("提交异步提取任务 (extract_text=True)", extra=log_extra)
         try:
             platform = media_extract_format._identify_platform(cleaned_url)
             if platform == MediaPlatform.UNKNOWN:
-                 raise HTTPException(status_code=400, detail=f"无法识别或不支持的URL平台: {cleaned_url}")
+                raise HTTPException(status_code=400, detail=f"无法识别或不支持的URL平台: {cleaned_url}")
 
             task_type = "media_extraction"
-            if platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.TIKTOK or platform == MediaPlatform.INSTAGRAM or platform == MediaPlatform.TWITTER:
-                # 不支持的平台
+            if platform in [MediaPlatform.YOUTUBE, MediaPlatform.TIKTOK, MediaPlatform.INSTAGRAM, MediaPlatform.TWITTER]:
                 task_type = "bad_news"
 
-            # !! 调用 celery_adapter 提交新任务 !!
             task_id = register_task(
                 name=f"extract_media_{user_id}_{cleaned_url[:20]}",
-                task_func=run_media_extraction_new, # 使用新的 Celery Task
-                args=( # 显式传递所有需要的参数
+                task_func=run_media_extraction_new,
+                args=(
                     cleaned_url,
-                    True, # extract_text is True
+                    True,
                     extract_request.include_comments,
                     platform,
                     user_id,
-                    trace_key, # 传递 trace_id
-                    app_id,   # 传递 app_id
-                    root_trace_key
-                    # 如果需要，传递积分信息: initial_points_info=...
+                    trace_key,
+                    app_id,
+                    root_trace_key,
+                    require_feishu_sign
                 ),
-                # task_type="media_extraction" # 可以指定队列
                 task_type=task_type
             )
 
             if not task_id:
-                 logger.error("提交 Celery 任务失败。", extra=log_extra)
-                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="无法提交后台处理任务，请稍后重试。")
+                logger.error("提交 Celery 任务失败。", extra=log_extra)
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="无法提交后台处理任务，请稍后重试。")
 
-            # 返回 202 Accepted 响应
             response_data = MediaExtractSubmitResponse(
                 code=202,
                 message="提取任务已提交，正在后台处理中。",
@@ -234,18 +213,51 @@ async def extract_media_content_smart(
                 root_trace_key=root_trace_key,
                 request_context=request_context
             )
-            # 需要使用 Response 类来设置正确的状态码
             return Response(
-                 content=response_data.model_dump_json(), # 使用 Pydantic V2 的方法
-                 status_code=status.HTTP_202_ACCEPTED,
-                 media_type="application/json"
+                content=response_data.model_dump_json(),
+                status_code=status.HTTP_202_ACCEPTED,
+                media_type="application/json"
             )
-
         except HTTPException as e:
-             raise e # 直接抛出已知的 HTTP 异常
+            raise e
         except Exception as e:
             logger.error(f"提交异步媒体提取任务时发生未知错误: {str(e)}", exc_info=True, extra=log_extra)
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"提交任务时发生未知错误 ({trace_key})")
+
+
+@router.post(
+    "/extract/coze",
+    summary="提取媒体内容(无飞书签名校验)",
+    description="不校验飞书签名，适用于内部或特殊场景。",
+    tags=["媒体服务"]
+)
+@TollgateConfig(title="提取媒体内容(无飞书签名校验)", type="media", base_tollgate="10", current_tollgate="1", plat="api")
+@require_auth_key()
+async def extract_media_content_no_feishu(
+    request: Request,
+    extract_request: MediaExtractRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    return await _extract_media_content_common(request, extract_request, db, require_feishu_sign=False)
+
+# 原有接口，保留飞书签名校验
+@router.post(
+    "/extract",
+    summary="提取媒体内容(智能同步/异步)",
+    description="如果 extract_text=false，同步返回基础信息(200 OK)。如果 extract_text=true，提交异步任务并返回任务ID(202 Accepted)。",
+    tags=["媒体服务"]
+)
+@TollgateConfig(title="提取媒体内容(智能同步/异步)", type="media", base_tollgate="10", current_tollgate="1", plat="api")
+@require_feishu_signature()
+@require_auth_key()
+async def extract_media_content_smart(
+    request: Request,
+    extract_request: MediaExtractRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    return await _extract_media_content_common(request, extract_request, db, require_feishu_sign=True)
+
+
 
 
 async def task_A_running():
@@ -256,21 +268,11 @@ async def task_A_running():
     return final_task_status, response_status_code, response_message
 
 
-
-@router.get(
-    "/extract/status/{task_id}",
-    response_model=MediaExtractStatusResponse,
-    summary="查询媒体提取任务状态和结果 (V2 - 聚合模式)", # 更新 summary
-    tags=["媒体服务"]
-)
-@TollgateConfig(title="获取提取媒体内容的任务执行结果", type="media", base_tollgate="10", current_tollgate="1", plat="api")
-@require_feishu_signature()
-@require_auth_key()
-
-async def get_extract_media_status_v4( # 函数名加后缀以便区分
-    task_id: str, # Task A ID
+async def _get_extract_media_status_common(
+    task_id: str,
     request: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession,
+    require_feishu_sign: bool = True
 ):
     """
     (V4 重写) 根据 Task A ID 查询状态。
@@ -493,6 +495,38 @@ async def get_extract_media_status_v4( # 函数名加后缀以便区分
     else: # 200 OK (任务完成，无论成功或失败)
          return final_response_obj # FastAPI 会处理序列化
 
+
+@router.get(
+    "/extract/status/{task_id}",
+    response_model=MediaExtractStatusResponse,
+    summary="查询媒体提取任务状态和结果 (V2 - 聚合模式)", # 更新 summary
+    tags=["媒体服务"]
+)
+@TollgateConfig(title="获取提取媒体内容的任务执行结果", type="media", base_tollgate="10", current_tollgate="1", plat="api")
+@require_feishu_signature()
+@require_auth_key()
+async def get_extract_media_status_v4( # 函数名加后缀以便区分
+    task_id: str, # Task A ID
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    return await _get_extract_media_status_common(task_id, request, db, require_feishu_sign=True)
+
+
+@router.get(
+    "/extract/coze/status/{task_id}",
+    response_model=MediaExtractStatusResponse,
+    summary="查询媒体提取任务状态和结果 (无飞书签名校验)",
+    tags=["媒体服务"]
+)
+@TollgateConfig(title="获取提取媒体内容的任务执行结果(无飞书签名校验)", type="media", base_tollgate="10", current_tollgate="1", plat="api")
+@require_auth_key()
+async def get_extract_media_status_no_feishu(
+    task_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    return await _get_extract_media_status_common(task_id, request, db, require_feishu_sign=False)
 
 @router.get("/proxy/vd")
 async def proxy_video(url: str):

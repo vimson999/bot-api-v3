@@ -969,7 +969,7 @@ class WechatService:
             elif event_key == "GET_BENEFITS":
                 return await self._handle_get_benefits(openid, db)
             elif event_key == "RECHARGE":
-                return "2025年首次点击【领福利】免费送您1000积分，试用后可通过充值获得积分。"
+                return "2025年首次点击【积分】-【领福利】免费送您100积分，试用后可通过充值获得积分。"
             elif event_key == "QUERY_API_KEY":
                 api_key_info = await self._get_user_api_key_info(openid, db)
                 if api_key_info:
@@ -1137,17 +1137,17 @@ class WechatService:
                             "name": "飞书表格",
                             "key": "FEISHU_SHEET"
                         }
-                        ,
-                        {
-                            "type": "click",
-                            "name": "爷充值",
-                            "key": "RECHARGE"
-                        },
-                        {
-                            "type": "view",
-                            "name": "土豪通道",
-                            "url": menu_url
-                        }
+                        # ,
+                        # {
+                        #     "type": "click",
+                        #     "name": "爷充值",
+                        #     "key": "RECHARGE"
+                        # },
+                        # {
+                        #     "type": "view",
+                        #     "name": "土豪通道",
+                        #     "url": menu_url
+                        # }
                     ]
                 }
             ]
@@ -1328,7 +1328,7 @@ class WechatService:
             if isinstance(result, dict):
                 if result.get("success", False):
                     # 成功领取积分
-                    points = result.get("data", {}).get("points", 1000)
+                    points = result.get("data", {}).get("points", 100)
                     return f"恭喜您成功领取 {points} 积分！\n当前可用积分：{result.get('data', {}).get('available_points', points)}"
                 else:
                     # 领取失败，返回错误消息

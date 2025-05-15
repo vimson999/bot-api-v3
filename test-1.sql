@@ -913,3 +913,24 @@ iw6i1vjj93ml.guyubao.com
  'sign': 'C18A80FD655C21B0AF1A931D87BD4846', 
  'prepay_id': 'wx13151205631395cd4492461bdfa2870000', '
  trade_type': 'JSAPI'}
+
+
+
+ 一键提取视频核心信息,只需粘贴视频链接 (支持DY、小X书、快X手、B站等主流平台)，表格自动抓取标题、作者、各项数据指标、封面、视频文案原文！ 获取免费api_key 可以参考：
+ 短视频的地址链接，格式为string类型
+
+提取短视频文案所需的API密钥，密钥为string类型。
+
+提取抖音小红书B站快手视频信息
+
+
+https://www.douyin.com/video/7475254041207950642
+50871805b4160a5f51b44b235e4f3c8eda33cebcb03f985544db72f3a1dac6ba
+94b683b5ce3dcca21393292c165ca964df40541ace868894911b3e9f5fbf7a06
+
+
+
+地址是
+https://www.douyin.com/video/7475254041207950642
+api_key是
+50871805b4160a5f51b44b235e4f3c8eda33cebcb03f985544db72f3a1dac6ba

@@ -81,7 +81,8 @@ def run_media_extraction_new(
     user_id: str,
     trace_id: str,
     app_id: str,
-    root_trace_key: str
+    root_trace_key: str,
+    ai_summary: bool
 ):
     """
     Celery Task (Task A): V3 - 返回包含状态的字典。
@@ -145,7 +146,7 @@ def run_media_extraction_new(
 
         # 触发转写任务 (Task B)
         task_b_async_result = run_transcription_task.apply_async(
-            args=(audio_path, media_url_to_download , user_id, effective_trace_id, app_id, basic_info, platform,url,audio_duration,root_trace_key),
+            args=(audio_path, media_url_to_download , user_id, effective_trace_id, app_id, basic_info, platform,url,audio_duration,root_trace_key,ai_summary),
             queue='transcription'
         )
         task_b_id = task_b_async_result.id
@@ -407,7 +408,8 @@ def run_transcription_task(
     platform: str,
     url: str,
     audio_duration : int,
-    root_trace_key: str = None
+    root_trace_key: str = None,
+    ai_summary : bool = False,
     ):
     """
     Celery Task (Task B): 负责执行音频转写，并将转写结果作为自己的返回值。
@@ -452,12 +454,14 @@ def run_transcription_task(
             # 2.2 调用格式化函数
             try:
                 transcribed_text = transcription_result_dict.get("text")
-                open_router_service = OpenRouterService()
-                ai_assistent = open_router_service.get_ai_assistant_text(task_id=task_id, origin_content=transcribed_text, log_extra=log_extra)
-                ai_assistent_content = {}
-                if ai_assistent.get("status") == "success":
-                    logger.info(f"[Task B {task_id=}] ai_assistent is {ai_assistent}", extra=log_extra)
-                    ai_assistent_content = ai_assistent.get("content")
+                ai_assistent_content = {'core':'','formula':'','copywriting':'','golden3s':''}
+
+                if ai_summary:
+                    open_router_service = OpenRouterService()
+                    ai_assistent = open_router_service.get_ai_assistant_text(task_id=task_id, origin_content=transcribed_text, log_extra=log_extra)
+                    if ai_assistent.get("status") == "success":
+                        logger.info(f"[Task B {task_id=}] ai_assistent is {ai_assistent}", extra=log_extra)
+                        ai_assistent_content = ai_assistent.get("content")
 
                 points = {
                     "total_required": total_required,
