@@ -10,13 +10,10 @@ from bot_api_v1.app.core.cache import cache_result
 from bot_api_v1.app.services.business.tiktok_service import TikTokService, TikTokError
 from bot_api_v1.app.utils.decorators.gate_keeper import gate_keeper
 from bot_api_v1.app.services.business.xhs_service import XHSService
-
-class MediaPlatform:
-    """媒体平台枚举"""
-    DOUYIN = "douyin"
-    TIKTOK = "tiktok"
-    XIAOHONGSHU = "xiaohongshu"
-    UNKNOWN = "unknown"
+from bot_api_v1.app.services.business.kuaishou_service import KuaishouService
+from bot_api_v1.app.constants.media_info import MediaPlatform
+from bot_api_v1.app.utils.media_extrat_format import Media_extract_format
+from bot_api_v1.app.services.business.yt_dlp_service import YtDLP_Service_Sync
 
 class MediaError(Exception):
     """媒体处理错误"""
@@ -32,27 +29,8 @@ class MediaService:
         self.xhs_service = XHSService()  # 使用新的XHSService
     
     def identify_platform(self, url: str) -> str:
-        """
-        识别URL对应的平台
-        
-        Args:
-            url: 媒体URL
-            
-        Returns:
-            平台标识: "douyin", "xiaohongshu" 或 "unknown"
-        """
-        url = url.lower()
-        
-        # 抖音URL模式
-        if any(domain in url for domain in ["douyin.com", "iesdouyin.com", "tiktok.com"]):
-            return MediaPlatform.DOUYIN
-            
-        # 小红书URL模式
-        if any(domain in url for domain in ["xiaohongshu.com", "xhslink.com", "xhs.cn"]):
-            return MediaPlatform.XIAOHONGSHU
-            
-        # 未知平台
-        return MediaPlatform.UNKNOWN
+        media_extrat_format = Media_extract_format()
+        return media_extrat_format._identify_platform(url)
     
     @gate_keeper()
     @log_service_call(method_type="media", tollgate="10-2")
@@ -84,8 +62,16 @@ class MediaService:
                 return await self._process_douyin(url, extract_text, include_comments,cal_points)
             elif platform == MediaPlatform.XIAOHONGSHU:
                 return await self._process_xiaohongshu(url, extract_text, include_comments,cal_points)
+            elif platform == MediaPlatform.KUAISHOU:     
+                return await self._process_kuaishou(url, extract_text, include_comments, cal_points)
+            elif platform == MediaPlatform.YOUTUBE or platform == MediaPlatform.TIKTOK or platform == MediaPlatform.INSTAGRAM or platform == MediaPlatform.TWITTER or platform == MediaPlatform.BILIBILI:
+                return await self._process_bl(url, extract_text, include_comments, cal_points)
+
+            if media_data is None: # 检查返回值
+                raise TikTokError(f"未能获取{platform}基础信息 (内部方法返回 None)")
             else:
                 raise MediaError(f"不支持的媒体平台: {url}")
+
         except Exception as e:
             error_msg = f"处理媒体内容时出错: {str(e)}"
             logger.error(error_msg, exc_info=True, extra={"request_id": trace_key})
@@ -93,6 +79,25 @@ class MediaService:
                 raise MediaError(error_msg) from e
             raise MediaError(f"未知错误: {error_msg}") from e
     
+    async def _process_kuaishou(self, url: str, extract_text: bool, include_comments: bool, cal_points: bool = True) -> Dict[str, Any]:
+        trace_key = request_ctx.get_trace_key()
+        log_extra = {"request_id": trace_key}
+        ks_service = KuaishouService()
+        basic_info_result = await ks_service.async_get_video_info(trace_key, url, log_extra)
+
+        # media_data = basic_info_result.get("data")
+
+        return basic_info_result
+
+    async def _process_bl(self, url: str, extract_text: bool, include_comments: bool, cal_points: bool = True) -> Dict[str, Any]:
+        trace_key = request_ctx.get_trace_key()
+        log_extra = {"request_id": trace_key}
+        yt_dlp_service = YtDLP_Service_Sync()
+        basic_info_result = await yt_dlp_service.async_get_basic_info(trace_key, url, log_extra)
+
+        # media_data = basic_info_result.get("data")
+
+        return basic_info_result
     async def _process_douyin(self, url: str, extract_text: bool, include_comments: bool, cal_points: bool = True) -> Dict[str, Any]:
         """处理抖音内容"""
         trace_key = request_ctx.get_trace_key()

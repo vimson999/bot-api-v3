@@ -103,5 +103,21 @@ class MediaContentResponse(BaseModel):
     publish_time: Optional[datetime] = Field(None, description="发布时间")
     update_time: Optional[datetime] = Field(None, description="更新时间")
 
+class MediaBasicContentResponse(BaseModel):
+    platform: str = Field(..., description="平台名称 (douyin, xiaohongshu)")
+    video_id: str = Field(..., description="视频ID")
+    original_url: str = Field(..., description="原始URL")
+    title: Optional[str] = Field(None, description="视频标题")
+    description: Optional[str] = Field(None, description="视频描述")
+    content: Optional[str] = Field(None, description="视频文案内容")
+    tags: List[str] = Field(default_factory=list, description="标签列表")
+    author: MediaAuthor = Field(..., description="作者信息")
+    statistics: MediaStatistics = Field(..., description="统计信息")
+    media: MediaInfo = Field(..., description="媒体信息")
+    # ai_assistant_text: AIASSITENT = Field(..., description="AI助手生成的文案")
+    # points: Points = Field(..., description="用户积分信息")
+    publish_time: Optional[datetime] = Field(None, description="发布时间")
+    update_time: Optional[datetime] = Field(None, description="更新时间")
+
 class MediaExtractResponse(BaseResponse[MediaContentResponse]):
     request_context: Optional[RequestContext] = Field(None, description="请求上下文信息")

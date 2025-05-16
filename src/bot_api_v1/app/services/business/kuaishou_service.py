@@ -10,7 +10,7 @@ from datetime import datetime
 
 from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.core.logger import logger
-
+import httpx
 
 class KuaishouService:
     def __init__(self):
@@ -54,3 +54,30 @@ class KuaishouService:
         except Exception as api_err:
             # 处理其他可能的错误
             logger.error(f"task {task_id} -- 调用 Kuaishou API 时发生未知错误: {api_err}", exc_info=True, extra=log_extra)
+
+        
+
+    async def async_get_video_info(
+        self, task_id: str, url: str, log_extra: dict) -> Optional[Dict[str, Any]]:
+        payload = {"url": url}
+        headers = {"Content-Type": "application/json"}
+        logger.info(f"[{task_id}] 开始获取快手视频基础信息: {url}", extra=log_extra)
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                kuaishou_site = settings.KUAISHOU_SITE
+                kuaishou_api_endpoint = kuaishou_site + "/info"
+
+                response = await client.post(kuaishou_api_endpoint, headers=headers, json=payload)
+                response.raise_for_status()
+                api_response = response.json()
+                if api_response.get("status") == "success" and api_response.get("data"):
+                    video_info = api_response["data"]
+                    logger.info(f"task {task_id} -- Kuaishou API 调用成功，获取到信息。video_info is {video_info}", extra=log_extra)
+                    return video_info
+                else:
+                    logger.info(f"task {task_id} -- Kuaishou API 调用完成，但未能获取有效视频信息: {api_response.get('message')}", extra=log_extra)
+        except httpx.RequestError as e:
+            logger.error(f"task {task_id} -- 调用 Kuaishou API 时发生网络错误: {e}", exc_info=True, extra=log_extra)
+        except Exception as api_err:
+            logger.error(f"task {task_id} -- 调用 Kuaishou API 时发生未知错误: {api_err}", exc_info=True, extra=log_extra)
+        return None

@@ -16,6 +16,7 @@ from bot_api_v1.app.constants.media_info import MediaType
 from bot_api_v1.app.services.business.script_service_sync import ScriptService_Sync
 from bot_api_v1.app.services.business.open_router_service import OpenRouterService
 from openai import OpenAI
+import asyncio
 
 
 class AudioDownloadError(Exception):
@@ -109,6 +110,11 @@ class YtDLP_Service_Sync:
         except Exception as e:
             logger.error(f"[{task_id}] 获取视频信息异常: {type(e).__name__} - {str(e)}，URL: {url}", exc_info=True, extra=log_extra)
             return None
+
+
+    async def async_get_basic_info(self, task_id: str, url: str, log_extra: dict):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_basic_info, task_id, url, log_extra)
 
     # def get_schema(self, note_info: Dict[str, Any]) -> Dict[str, Any]:
     #     try:

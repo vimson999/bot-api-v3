@@ -924,9 +924,11 @@ iw6i1vjj93ml.guyubao.com
 提取抖音小红书B站快手视频信息
 
 
+
 https://www.douyin.com/video/7475254041207950642
 50871805b4160a5f51b44b235e4f3c8eda33cebcb03f985544db72f3a1dac6ba
 94b683b5ce3dcca21393292c165ca964df40541ace868894911b3e9f5fbf7a06
+4b51782031927320c80b704ef2c6d1fee7e5d87d468f5b7e7494f3f586c521ac
 
 
 
@@ -934,3 +936,12 @@ https://www.douyin.com/video/7475254041207950642
 https://www.douyin.com/video/7475254041207950642
 api_key是
 50871805b4160a5f51b44b235e4f3c8eda33cebcb03f985544db72f3a1dac6ba
+
+
+2 validation errors for MediaContentResponse
+ai_assistant_text
+  Field required [type=missing, input_value={'platform': 'douyin', 'v...1', 'update_time': None}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.10/v/missing
+points
+  Field required [type=missing, input_value={'platform': 'douyin', 'v...1', 'update_time': None}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.10/v/missing

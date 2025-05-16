@@ -17,7 +17,7 @@ from celery.result import AsyncResult # 导入 AsyncResult
 
 # 核心与上下文
 from bot_api_v1.app.core.logger import logger
-from bot_api_v1.app.core.schemas import BaseResponse, MediaContentResponse, RequestContext
+from bot_api_v1.app.core.schemas import BaseResponse, MediaContentResponse, RequestContext,MediaBasicContentResponse
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.core.signature import require_signature # 如果还需要同步路径的签名
 from bot_api_v1.app.utils.media_extrat_format import Media_extract_format
@@ -68,6 +68,14 @@ class MediaExtractResponse(BaseModel): # 复用或重命名旧的响应模型
     code: int = 200
     message: str
     data: Optional[MediaContentResponse] = None # MediaContentResponse 需已定义
+    request_context: RequestContext
+
+
+class MediaExtractBasicContentResponse(BaseModel): # 复用或重命名旧的响应模型
+    """提取媒体内容（同步或完成后）的响应模型"""
+    code: int = 200
+    message: str
+    data: Optional[MediaBasicContentResponse] = None # MediaContentResponse 需已定义
     request_context: RequestContext
 
 class MediaExtractStatusResponse(BaseModel):
@@ -542,7 +550,7 @@ async def proxy_video(url: str):
 
 @router.post(
     "/e1/bsc",
-    response_model=MediaExtractResponse,
+    response_model=MediaExtractBasicContentResponse,
     summary="同步提取媒体基础信息",
     description="同步提取媒体基础信息（不抓文案，仅基础信息），适合前端直接调用。",
     tags=["媒体服务"]
@@ -581,7 +589,7 @@ async def extract_media_basic_info(
         trace_id=trace_key, app_id=app_id, source=source, user_id=user_id,
         user_name=user_name, ip=ip_address, timestamp=datetime.now()
     )
-    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id, "root_trace_key": root_trace_key}
+    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id, "root_trace_key": root_trace_key,"platform":"s-site"}
 
     logger.info_to_db(
         f"不扣分提取接口接收媒体基础信息提取请求 (已解密): url={extract_request.url}",
@@ -603,11 +611,11 @@ async def extract_media_basic_info(
         if not media_content: # 如果服务返回 None 或空
              raise MediaError("无法从指定 URL 提取到媒体内容")
 
-        response_data = MediaExtractResponse(
+        response_data = MediaExtractBasicContentResponse(
             code=200,
             message="成功提取媒体基础信息",
             # 确保 media_content 是字典或可以解包给 MediaContentResponse
-            data=MediaContentResponse(**media_content) if isinstance(media_content, dict) else media_content,
+            data=MediaBasicContentResponse(**media_content) if isinstance(media_content, dict) else media_content,
             request_context=request_context
         )
         logger.debug("同步提取媒体基础信息结束", extra=log_extra)

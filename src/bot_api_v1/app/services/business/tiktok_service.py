@@ -203,6 +203,7 @@ class TikTokService:
                  except Exception as chdir_err:
                      logger.error(f"Failed to restore working directory after unexpected error: {chdir_err}")
              raise InitializationError(f"Setup failed for TikTok downloader: {str(e)}") from e
+             
     
     async def __aenter__(self) -> 'TikTokService':
         """
