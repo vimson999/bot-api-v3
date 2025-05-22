@@ -1,21 +1,25 @@
 # bot_api_v1/app/api/routers/media.py
 
+from hashlib import new
 from typing import Dict, Any, Optional, Union # 添加 Union
 from datetime import datetime
 import uuid
 import re
 import traceback
 from bot_api_v1.app.core.cache import RedisCache
+from bot_api_v1.app.services.helper.user_profile_helper import UserProfileHelper
 
 import httpx
 from fastapi import Header
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Response # 导入 Response, status
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Response ,Body# 导入 Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, HttpUrl, validator, Field
 from celery.result import AsyncResult # 导入 AsyncResult
 
 # 核心与上下文
+from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.schemas import BaseResponse, MediaContentResponse, RequestContext,MediaBasicContentResponse
 from bot_api_v1.app.core.context import request_ctx
@@ -39,6 +43,7 @@ from bot_api_v1.app.utils.decorators.auth_feishu_sheet import require_feishu_sig
 from bot_api_v1.app.tasks.celery_adapter import register_task, get_task_status # 导入适配器函数
 from bot_api_v1.app.tasks.celery_tasks import run_media_extraction_new # 导入新的 Celery Task
 from bot_api_v1.app.tasks.celery_app import celery_app # 导入 celery_app 实例 (用于 AsyncResult)
+
 
 
 # --- 请求与响应模型 ---
@@ -98,7 +103,7 @@ router = APIRouter(prefix="/media", tags=["媒体服务"])
 # 实例化服务 (如果还需要调用 identify_platform 或 extract_text=False 的逻辑)
 media_service = MediaService()
 media_extract_format = Media_extract_format() # 实例化 Media_extract_format
-
+user_profile_helper = UserProfileHelper()
 # clean_url 函数 (保持不变)
 async def clean_url(text: str) -> Optional[str]:
     # ... (代码同前) ...
@@ -782,3 +787,183 @@ async def delete_cache(
         return {"code": 200, "message": f"缓存已删除: url={url},key={key}"}
     else:
         return {"code": 500, "message": f"删除缓存失败: url={url},key={key}"}
+
+
+
+
+class SearchNoteRequest(BaseModel):
+    platform: str
+    query: str
+    num: int = 10
+    qsort: str = "general"
+
+class SearchNoteData(BaseModel):
+    memo: str = ""
+    file_link: str = ""
+    total_required: int = 10
+    # qsort: str = "general"
+
+class SearchNoteResponse(BaseModel):
+    code: int = 200
+    message: str = "success"
+    data: SearchNoteData = {}
+    request_context: RequestContext
+
+class KOLResponse(BaseModel):
+    code: int = 200
+    message: str = "success"
+    data: Dict[str, Any] = {}
+    request_context: RequestContext
+
+@router.post(
+    "/sn",
+    response_model=SearchNoteResponse,
+    summary="按平台搜索笔记内容",
+    description="根据平台和关键词搜索笔记内容，目前支持小红书（XHS）等。",
+    tags=["媒体服务"]
+)
+@require_feishu_signature()
+@require_auth_key()
+async def search_note_by_kword(
+    req: Request,
+    s_req: SearchNoteRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    trace_key = request_ctx.get_trace_key()
+    app_id = request_ctx.get_app_id()
+    source = request_ctx.get_source()
+    user_id = request_ctx.get_cappa_user_id()
+    user_name = request_ctx.get_user_name()
+    ip_address = req.client.host if req.client else "unknown_ip"
+    root_trace_key = request_ctx.get_root_trace_key()
+    platform = 'platform'
+
+    request_context = RequestContext(
+        trace_id=trace_key, app_id=app_id, user_id=user_id, source=None, user_name=None, ip=None, timestamp=datetime.now()
+    )
+    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id, "platform": s_req.platform, "query": s_req.query}
+    logger.info_to_db(f"收到平台笔记搜索请求: platform={s_req.platform}, query={s_req.query}, num={s_req.num}, sort={s_req.qsort}", extra=log_extra)
+    try:
+        result = await media_service.search_note_by_kword(trace_key,s_req.platform, s_req.query, s_req.num, s_req.qsort,log_extra)
+        logger.info_to_db(f"平台笔记搜索成功: platform={s_req.platform}, query={s_req.query}, result_count={len(result) if result else 0}", extra=log_extra)
+    
+        points_consumed = 0;
+        if not result:
+            logger.warning(f"平台笔记搜索没找到结果: platform={s_req.platform}, query={s_req.query}, result_count=0", extra=log_extra)
+            return SearchNoteResponse(
+                code=200,
+                message="没有对应搜索结果",
+                data=SearchNoteData(),
+            )
+
+        
+        points_consumed = settings.BASIC_CONSUME_POINT;
+        request_ctx.set_consumed_points(points_consumed)
+
+        note_data = SearchNoteData()
+        note_data.memo = f'使用关键字【{s_req.query}】-搜索平台【{s_req.platform}】-得到【{len(result)}】条结果,消耗【{points_consumed}】积分'
+        note_data.file_link = await media_service.extract_xiaohongshu_data_str(result)
+        note_data.total_required = points_consumed
+
+        return SearchNoteResponse(
+            code=200,
+            message="success",
+            data=note_data,
+            request_context=request_context
+        )
+    except Exception as e:
+        logger.error(f"search_note_by_platform_api error: {e}", extra=log_extra)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+from bot_api_v1.app.utils.media_extrat_format import Media_extract_format
+
+@router.post(
+    "/kol",
+    response_model=KOLResponse,
+    summary="按平台搜索达人",
+    description="根据平台和关键词搜索笔记内容，目前支持小红书（XHS）等。",
+    tags=["媒体服务"]
+)
+# @TollgateConfig(title="搜索达人", type="media", base_tollgate="10", current_tollgate="1", plat="api")
+# @require_feishu_signature()
+# @require_auth_key()
+async def search_kol_by_url(
+    req: Request,
+    db: AsyncSession = Depends(get_db)
+):
+    trace_key = request_ctx.get_trace_key()
+    app_id = request_ctx.get_app_id()
+    source = request_ctx.get_source()
+    user_id = request_ctx.get_cappa_user_id()
+    user_name = request_ctx.get_user_name()
+    ip_address = req.client.host if req.client else "unknown_ip"
+    root_trace_key = request_ctx.get_root_trace_key()
+
+    cq_data = await req.json()
+    user_url = str(cq_data.get("url"))
+    formatter = Media_extract_format()
+    platform = formatter._identify_platform(user_url)
+
+    request_context = RequestContext(
+        trace_id=trace_key, app_id=app_id, user_id=user_id, source=None, user_name=None, ip=None, timestamp=datetime.now()
+    )
+    log_extra = {"request_id": trace_key, "user_id": user_id, "app_id": app_id, "platform": platform, "user_url": user_url}
+    logger.info_to_db(f"按平台搜索达人-search_kol_by_url: platform={platform}, user_url={user_url}", extra=log_extra)
+
+    try:
+        result = await media_service.async_get_user_full_info( platform,user_url,log_extra )
+        logger.info_to_db(f"按平台搜索达人-search_kol_by_url-成功: platform={platform}, user_url={user_url}, result_count={len(result) if result else 0}", extra=log_extra)
+    
+        points_consumed = 0;
+        if not result:
+            logger.warning(f"按平台搜索达人-async_get_user_full_info-没找到结果: platform={platform}, user_url={user_url}, result_count=0", extra=log_extra)
+            return SearchNoteResponse(
+                code=200,
+                message="按平台搜索达人没有对应搜索结果",
+                data=SearchNoteData(),
+            )
+
+        
+        # points_consumed = settings.BASIC_CONSUME_POINT;
+        # request_ctx.set_consumed_points(points_consumed)
+
+        kol = result
+        # note_data.memo = f'使用关键字【{s_req.query}】-搜索平台【platform}】-得到【{len(result)}】条结果,消耗【{points_consumed}】积分'
+        # note_data.file_link = await media_service.extract_xiaohongshu_data_str(result)
+        # note_data.total_required = points_consumed
+
+        logger.info_to_db(f"按平台搜索达人-search_kol_by_url-返回结果: platform={platform}, user_url={user_url}, kol={kol}", extra=log_extra)
+
+        return KOLResponse(
+            code=200,
+            message="success",
+            data=kol,
+            request_context=request_context
+        )
+    except Exception as e:
+        logger.error(f"search_kol_by_url error: {e}", extra=log_extra)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@router.post("/upro", response_model=BaseResponse)
+# @TollgateConfig(title="获取用户主页信息", type="media", base_tollgate="10", current_tollgate="1", plat="api")
+# @require_feishu_signature()
+# @require_auth_key()
+async def get_user_profile_api(
+    req: Request
+):
+    """
+    获取用户主页信息
+    """
+    try:
+        cq_data = await req.json()
+        user_url = str(cq_data.get("url"))
+        result = await user_profile_helper.get_user_profile_logic(user_url)
+
+        return BaseResponse(code=200, message="获取成功", data=result)
+    except Exception as e:
+        # 这里建议日志也交由 helper 处理，或保留原有日志
+        return BaseResponse(code=500, message=f"获取失败: {str(e)}")

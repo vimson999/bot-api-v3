@@ -933,15 +933,111 @@ https://www.douyin.com/video/7475254041207950642
 
 
 地址是
-https://www.douyin.com/video/7475254041207950642
+6.12 12/09 e@B.gO Ljp:/ 女人过了三十岁必须要拥有的一支口红！而且它只有中国人才能做得出来！  https://v.douyin.com/0CNU3pv1wiQ/ 复制此链接，打开Dou音搜索，直接观看视频！
 api_key是
 50871805b4160a5f51b44b235e4f3c8eda33cebcb03f985544db72f3a1dac6ba
 
+https://www.xiaohongshu.com/explore/682ae26e000000002300eccd?xsec_token=ABhHe13KV7aZyonWHAeTdIJfKgu8neQ8fcjiHHwvkuFI0=&xsec_source=pc_feed
+https://www.xiaohongshu.com/explore/682ae26e000000002300eccd?xsec_token=ABhHe13KV7aZyonWHAeTdIJfKgu8neQ8fcjiHHwvkuFI0=&xsec_source=
 
-2 validation errors for MediaContentResponse
-ai_assistant_text
-  Field required [type=missing, input_value={'platform': 'douyin', 'v...1', 'update_time': None}, input_type=dict]
-    For further information visit https://errors.pydantic.dev/2.10/v/missing
-points
-  Field required [type=missing, input_value={'platform': 'douyin', 'v...1', 'update_time': None}, input_type=dict]
-    For further information visit https://errors.pydantic.dev/2.10/v/missing
+
+
+当前调试已处理完毕
+execute执行结果：
+{
+  "code": 0,
+  "data": {
+    "id": "1747721810383",
+    "file_link": "标题：小米芯片之路\n作者：雷军\n点赞数：25390  收藏数：1689  评论数：5045  分享数：0\n笔记链接：https://www.xiaohongshu.com/explore/682aa19a000000002202af73?xsec_token=ABhHe13KV7aZyonWHAeTdIJZFF1BNgUiOlouNjh0ihNfM=&xsec_source=\n\n标题：Xiaomi Will Pay You for What??? 📱💼\n作者：AffiliateX ROI\n点赞数：123  收藏数：81  评论数：17  分享数：0\n笔记链接：https://www.xiaohongshu.com/explore/6824bf48000000000f03b754?xsec_token=AB1cHRj5jNKCOGr1v6XNX0DnO8ZOPSJcL0HV_s_ydjae4=&xsec_source=\n\n标题：无标题\n作者：小红薯6821710B\n点赞数：0  收藏数：0  评论数：1  分享数：0\n笔记链接：https://www.xiaohongshu.com/explore/682c16a3000000000303b92f?xsec_token=ABf6Y0JJZqLLlaRtTIGFfTBdPemyouAhcpvr-P5rgOUxM=&xsec_source=\n",
+    "total_required": 1,
+    "primaryProperty": "使用关键字【小米】-搜索平台【xiaohongshu】-得到【3】条结果,消耗【1】积分"
+  }
+}
+
+curl -X POST \
+  'http://localhost:8083/api/media/kol' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://www.xiaohongshu.com/user/profile/5b73ad89abe85900018c4d46?xsec_token=ABO2c1MClUMbsXckATU6Cd6ZaEI2fGJ4me_10kENhhKoo=&xsec_source=pc_feed"
+  }'
+
+
+'{"tab_public": {"collection": false, "collectionNote": {"lock": false, "count": 0, "display": false}, "collectionBoard": {"count": 0, "display": false, "lock": false}}, "extra_info": {"fstatus": "none", "blockType": "DEFAULT"}, "result": {"success": true, "code": 0, "message": "success"}, "basic_info": {"imageb": "https://sns-avatar-qc.xhscdn.com/avatar/1040g2jo31g5ummkghs0g4aefj3moija671caumg?imageView2/2/w/540/format/webp", "nickname": "\\u8bf7\\u53eb\\u6211\\u53a8\\u795e", "images": "https://sns-avatar-qc.xhscdn.com/avatar/1040g2jo31g5ummkghs0g4aefj3moija671caumg?imageView2/2/w/360/format/webp", "red_id": "606405531", "gender": 1, "ip_location": "\\u5e7f\\u4e1c", "desc": "\\ud83d\\udc9b\\u62e5\\u6709\\u53a8\\u9f8427\\u5e74\\n\\ud83d\\udc9a\\u4f60\\u53ef\\u4ee5\\u6c38\\u8fdc\\u76f8\\u4fe1\\u6211\\u7684\\u53a8\\u827a\\n\\ud83d\\udcee2\\ufe0f\\u20e35\\ufe0f\\u20e32\\ufe0f\\u20e34\\ufe0f\\u20e39\\ufe0f\\u20e36\\ufe0f\\u20e30\\ufe0f\\u20e38\\ufe0f\\u20e38\\ufe0f\\u20e3\\ud83d\\udc27\\ud83d\\udc27com"}, "interactions": [{"name": "\\u5173\\u6ce8", "count": "16", "type": "follows"}, {"type": "fans", "name": "\\u7c89\\u4e1d", "count": "996"}, {"count": "18250", "type": "interaction", "name": "\\u83b7\\u8d5e\\u4e0e\\u6536\\u85cf"}], "tags": [{"icon": "http://ci.xiaohongshu.com/icons/user/gender-female-v1.png", "tagType": "info"}, {"name": "\\u5e7f\\u4e1c\\u6df1\\u5733", "tagType": "location"}]}'
+[{'type': 'video', 'display_title': '🍜超适合懒人的葱油拌面', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '680518d2000000001b024fc9', 'xsec_token': 'ABVX6fVwbWUeYFpCYlfOavDq3erBDgpmSMIyL43rkAX9E='}, {'cover': {...}, 'note_id': '68123a48000000002001f831', 'xsec_token': 'ABN8zcwzllh2KbnU_rt158yg3sg55qY68cQFUEWmfNwh8=', 'type': 'video', 'display_title': '🍜这个拌面在网上那么火不是没有原因的', 'user': {...}, 'interact_info': {...}}, {'type': 'video', 'display_title': '🍜 如果我开店，这一定是招牌面❗❗❗', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '682b5b1b000000002102e4ad', 'xsec_token': 'ABhMMqYpIC0vB5D7YQ2IfC4h0LXZM13RBmorkJdJJSjUM='}, {'type': 'video', 'display_title': '🍜真的巨巨巨…巨好吃🔥', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '6828b26c0000000021008a33', 'xsec_token': 'ABMkv-qk791RJA-rhPFh9V0piz6nkYloeAmVWfSBTzmcg='}, {'note_id': '6828a30f000000002100f01c', 'xsec_token': 'ABMkv-qk791RJA-rhPFh9V0nNjdlPGwof6tH_CbTMFw0Y=', 'type': 'video', 'display_title': '🍜大家都喜欢吃的红油煎蛋泡面🔥🔥🔥', 'user': {...}, 'interact_info': {...}, 'cover': {...}}, {'type': 'video', 'display_title': '🍜这个拌面配方可以去开店了❗ ❗ ❗', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '68275ab5000000002001da0c', 'xsec_token': 'AB-oIh2wtPxzjVh5o-xmgnbOn5PNUViFR8fmRczeJ37A0='}, {'note_id': '6824c357000000002100cb79', 'xsec_token': 'ABB4NCWq2o3RlurcISFEys7Eea-wAOTYP40EJfHsgxw0I=', 'type': 'video', 'display_title': '🍜这个拌面配方可以去开店了', 'user': {...}, 'interact_info': {...}, 'cover': {...}}, {'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '682367f9000000002001c6d8', 'xsec_token': 'ABXwmwUfp7IHXw2yTuLHACwQpvRJFXRFCYp9N4aNaUpWQ=', 'type': 'video', 'display_title': '答应我❗一定要试试这个面条'}, {'interact_info': {...}, 'cover': {...}, 'note_id': '6821ffb2000000002001ecc6', 'xsec_token': 'ABJmZVvTP7Csawc4mn1asR6BuzBhW8Yxx-R7c0Bl7ZK4U=', 'type': 'video', 'display_title': '🍜这个拌面配方可以去开店了', 'user': {...}}, {'type': 'video', 'display_title': '🍜如果我开店，这一定是招牌面', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '6820b850000000002001eb8c', 'xsec_token': 'ABFAle5fndi54rjMeZvhWsYw1NxnPpdH9B_EFonCme9TQ='}, {'display_title': '🍜如果我开店，这一定是招牌面', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '681a2b900000000022026e91', 'xsec_token': 'ABqAU2enuDhcB1GEzkmoKGLPmndkZfdgSIdF3G9A1LnJM=', 'type': 'video'}, {'interact_info': {...}, 'cover': {...}, 'note_id': '681631f300000000220250a8', 'xsec_token': 'ABZr98qc0R2usnMtcRqw1Ir2dGK0FrHLe0mVXxAczf-Io=', 'type': 'video', 'display_title': '🍜这个拌面配方可以去开店了', 'user': {...}}, {'note_id': '680f97e9000000002100db1d', 'xsec_token': 'ABBUopo2vKqu9oSGlsRCJ0bjj9VbuGMVp4q84yTkWGAuI=', 'type': 'video', 'display_title': '🍜这滋味只有吃过的人懂', 'user': {...}, 'interact_info': {...}, 'cover': {...}}, {'xsec_token': 'ABp66kCrf1ByWU8DyB79GRsOFQ7pSVQoqk3NYSEafHL2s=', 'type': 'video', 'display_title': '🍜红油煮个金拉面吃吃', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '680cfb8d000000001e007df0'}, {'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67ffd3fc000000001b03e1f8', 'xsec_token': 'AB366ISGbyqYQ_lUWiJgGK9ySxRKZxczbbI34AV_meKNo=', 'type': 'video', 'display_title': '🍜妈妈教的葱油拌面升级了'}, {'type': 'video', 'display_title': '煮个番茄鸡蛋面吃吃 ', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67f67f5b000000001b025db6', 'xsec_token': 'AB6xb-C5_R7-32x_PEhQrCm3Wos2uxD5541dN7BA0QfMQ='}, {'type': 'video', 'display_title': '清空冰箱煮一碗好吃的辛拉面', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67efe892000000001d024b03', 'xsec_token': 'AB6JueoXtVW-1p6ZlWdG9ok6dwWF6lkgjWouoV8yP4Gps='}, {'interact_info': {...}, 'cover': {...}, 'note_id': '67e91f45000000001d004966', 'xsec_token': 'ABBtn8ylwmSVmUOH1oD5GajGPL4BTGaiF61b2ot0Iumyk=', 'type': 'video', 'display_title': '跟着潘玮柏煮泡面🍜', 'user': {...}}, {'note_id': '67e524ab000000001d02c0e0', 'xsec_token': 'ABxyvjM1iTgdzTusd--qTxcfp5_RUWxyeoBqyORNHgIJ4=', 'type': 'video', 'display_title': '打工人如何快速吃上饭', 'user': {...}, 'interact_info': {...}, 'cover': {...}}, {'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67d2f009000000001d01d540', 'xsec_token': 'ABtPQhAk_9zWsQ_OTsecVhCjZmfSNF6D9W0g7DPmlMZE4=', 'type': 'video', 'display_title': '我妈这个葱油拌面真的很绝❗️'}, {'type': 'video', 'display_title': '试试这个泡面做法❗️❗️❗️', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67cb108f000000002903b428', 'xsec_token': 'ABUlvxCApwaW9j6ghf2p1HQLjMfUgXFJ4kT3Zavq-QN-w='}, {'display_title': '搞点红油煎鸡蛋香肠鱼丸泡面吃吃❗️❗️', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67c5a22e00000000290139bd', 'xsec_token': 'AB154l2iHqMe-AYw1I_w0eFfIz17YIqgfaiRapcOH8lBs=', 'type': 'video'}, {'type': 'video', 'display_title': '请所有人谨记这个做法🔥', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67b33ee00000000029035661', 'xsec_token': 'ABFzYI-BBphFCuAk7ty8il8wmpmT2N2FiHd8zY1HmSpqA='}, {'type': 'video', 'display_title': '谁能拒绝芝士面啊❗❗❗', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67af4978000000002903ab9d', 'xsec_token': 'ABKCZ2Nv2kMDB3N8sEVX4o_s0uKEf2q82tYn3pv696q3s='}, {'display_title': '🔥10万人看过我煮泡面，煮个辛拉面感谢大家', 'user': {...}, 'interact_info': {...}, 'cover': {...}, 'note_id': '67aa168f000000002503c998', 'xsec_token': 'ABhf7-6-c6Z6867dZy6sBROn_teddHfszY74_RLwzaNiQ=', 'type': 'video'}, {'cover': {...}, 'note_id': '67a6043a000000002602de6e', 'xsec_token': 'ABIm_-1S_5jit6dnlAquMjbmjx2Is2sFF-lZcIu0AXLgo=', 'type': 'video', 'display_title': '🔥泡面的神仙吃法｜黏糊糊芝士年糕火鸡面', 'user': {...}, 'interact_info': {...}}, {'note_id': '679f78f8000000002803e503', 'xsec_token': 'AB71EcYyh1EAlgUOS-_S3mExS1-oERVEpktCbhHqtS9iU=', 'type': 'video', 'display_title': '我宣布❗️这是泡面最好吃的做法', 'user': {...}, 'interact_info': {...}, 'cover': {...}}, {'interact_info': {...}, 'cover': {...}, 'note_id': '6797926d000000002a000fa0', 'xsec_token': 'ABXpwLUjnYmSchHEx0WR9sWFtTKKDYoKiyBEbdKtM_mME=', 'type': 'video', 'display_title': '搞点红油煎蛋香肠泡面吃吃', 'user': {...}}, {'interact_info': {...}, 'cover': {...}, 'note_id': '67922271000000002901fdaa', 'xsec_token': 'ABIwOSbDtoOO_rFY0jDCjY82GXczmf_yC9OCpjLUFETkc=', 'type': 'video', 'display_title': '所有人谨记这个吃法❗❗❗', 'user': {...}}]
+
+
+
+
+
+我希望返回的结构是
+{
+  名字,
+  性别,
+  签名,
+  粉丝数,
+  关注数,
+  获赞数,
+  发布视频数,
+  较昨天新增粉丝,
+  较昨天新增获赞,
+  较昨天新增发布数,
+  词云标签,
+  发布的视频:[
+    {
+      标题,
+      点赞数,
+      评论数,
+      分享数,
+      观看数,
+      发布时间,
+      视频链接
+    }
+  ]
+}
+
+
+
+
+是否植入广告
+广告的品牌
+关联热门、热点话题、挑战
+评论的词云
+高互动的粉丝画像
+点赞、收藏、分享、播放数均值比较
+
+
+
+视频----
+内含广告信息
+与今日关联热门、热点话题、挑战
+评论的词云
+高赞评论
+评论详情列表
+留言用户画像标签
+较同作者其他视频相比值
+较昨日新增播放/点赞/收藏/分享/评论/留言数
+7日新增播放/点赞/收藏/分享/评论/留言数
+
+
+
+KOL
+变现模式 
+均值 
+远超均值视频数量 
+头牌 
+商单品牌 
+橱窗商品 
+橱窗爆品 
+带货类型 
+直播场次 
+最近直播时间
+
+
+
+
+curl -X POST \
+  'http://localhost:8083/api/media/upro' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://www.douyin.com/user/MS4wLjABAAAAyeRQDmzlFJJ-WJ3mfkvN2IfTei6Mm7nTwkX5wz5hfxk"
+  }'

@@ -697,3 +697,117 @@ class XHSService:
              error_msg = f"发生意外错误: {str(e)}"
              logger.error(f"[Sync XHS] {error_msg}", exc_info=True, extra=log_extra)
              return {"status": "failed", "error": f"发生内部错误 ({trace_id})", "exception": str(e), "points_consumed": 0}
+
+
+    def get_search_keyword(self, keyword: str) -> List[Dict[str, Any]]:
+        """
+        搜索小红书笔记信息
+
+        Args:
+            keyword: 搜索关键词
+            count: 搜索结果数量，默认为10
+
+        Returns:
+            List[Dict[str, Any]]: 搜索结果列表，每个结果包含笔记信息
+        """
+        logger.info(f"开始搜索小红书笔记: {keyword}")
+        success, msg, res_json = self.xhs_apis.get_search_keyword(keyword, self.cookies_str)
+
+        return success, msg, res_json
+
+    
+    def get_search_some_note(
+        self, 
+        trace_id: str,
+        platform: str, 
+        query: str, 
+        num: int, 
+        sort: str ) -> List[Dict[str, Any]]:
+        """
+        搜索小红书笔记信息
+        """
+        logger.info(f"[XHS][search_some_note] 开始搜索小红书笔记: query={query}, num={num}, sort={sort}, platform={platform}", extra={"trace_id": trace_id})
+        try:
+            query_num = num
+            note_type = 0
+            success, msg, notes = self.xhs_apis.search_some_note(query, query_num, self.cookies_str, sort, note_type)
+            if not success:
+                logger.error(f"[XHS][search_some_note] 搜索失败: {msg}", extra={"trace_id": trace_id, "platform": platform, "query": query, "num": num, "sort": sort})
+                return []
+            logger.info(f"[XHS][search_some_note] 搜索成功: success={success}, msg={msg}, count={len(notes)}", extra={"trace_id": trace_id, "platform": platform, "query": query, "num": num, "sort": sort})
+            return notes
+        except Exception as e:
+            logger.error(f"[XHS][search_some_note] 搜索异常: {str(e)}", exc_info=True, extra={"trace_id": trace_id, "platform": platform, "query": query, "num": num, "sort": sort})
+            return []
+
+    async def async_get_search_some_note(self, trace_key:str, platform: str, query: str, num: int, sort: str) -> List[Dict[str, Any]]:
+        """
+        异步搜索小红书笔记信息
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_search_some_note, trace_key,platform,query,num,sort)
+
+    def get_note_all_comment(self, note_url: str) -> List[Dict[str, Any]]:
+        """
+        搜索小红书笔记信息
+
+        Args:
+            keyword: 搜索关键词
+            count: 搜索结果数量，默认为10
+
+        Returns:
+            List[Dict[str, Any]]: 搜索结果列表，每个结果包含笔记信息
+        """
+        logger.info(f"开始搜索小红书笔记: {note_url}")
+        
+        note_url = r'https://www.xiaohongshu.com/explore/6824a2aa000000000f03a916?xsec_token=YBjpTNSB7OwG_Q9055_0PqwSPqZsFEHNVBbh81qN6xJZg%3D&xsec_source=pc_creatormng'
+        success, msg, note_all_comment = self.xhs_apis.get_note_all_comment(note_url, self.cookies_str)
+        return success, msg, note_all_comment
+
+
+
+    async def async_get_user_info(self, user_id: str,log_extra:Dict[str, Any]) -> Dict[str, Any]:
+        """
+        异步获取小红书用户信息
+        """
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_user_info, user_id,log_extra)
+
+    def get_user_info(self, user_id: str,log_extra:Dict[str, Any]) -> Dict[str, Any]:
+        """
+        获取小红书用户信息
+
+        Args:
+            user_id: 小红书用户ID或URL
+
+        Returns:
+            Dict[str, Any]: 用户信息，包含昵称、关注数、粉丝数等
+
+        Raises:
+            XHSError: 处理过程中出现的错误
+        """
+        logger.info(f"开始小红书--get_user_info: {user_id}")
+
+        success, msg, res_json = self.xhs_apis.get_user_info(user_id, self.cookies_str)
+        logger.debug(f"小红书--get_user_info: {success}, {msg}, {res_json}",extra=log_extra)
+        
+        return res_json
+
+    
+    async def async_get_user_post_note(self, user_url: str,log_extra:Dict[str, Any]) -> List[Dict[str, Any]]:
+        """
+        异步获取小红书用户发布的信息
+        """
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_user_post_note, user_url,log_extra)
+
+    def get_user_post_note(self, user_url: str,log_extra:Dict[str, Any]) -> List[Dict[str, Any]]:
+        logger.info(f"开始小红书--get_user_post_note: {user_url}")
+
+        success, msg, note_list = self.xhs_apis.get_user_all_notes(user_url, self.cookies_str)
+        logger.debug(f"小红书--get_user_info: {success}, {msg}, {note_list}",extra=log_extra)
+        
+        return note_list
+

@@ -12,6 +12,7 @@ import redis # 导入同步 redis 库
 import urllib.parse 
 from bot_api_v1.app.core.config import settings
 from bot_api_v1.app.core.logger import logger # 导入 logger 实例
+import redis.asyncio as aioredis
 
 # 简单的内存缓存实现 (保持不变)
 class SimpleCache:
@@ -334,3 +335,59 @@ def get_from_sync_cache(key: str) -> Optional[dict]:
 
 def create_task_b_result_sync_cache(url: str, task_b_final_result: dict, expire_seconds: int = 1800) -> bool:
     return save_task_result_to_cache(url, task_b_final_result, expire_seconds=expire_seconds)
+
+
+_aioredis_client_cache = None
+async def get_aioredis_client():
+    global _aioredis_client_cache
+    if _aioredis_client_cache is not None:
+        return _aioredis_client_cache
+    from bot_api_v1.app.core.config import settings
+    if not hasattr(settings, "CACHE_REDIS_URL") or not settings.CACHE_REDIS_URL:
+        logging.error("CACHE_REDIS_URL 未配置，无法创建异步 Redis 客户端。")
+        return None
+    _aioredis_client_cache = aioredis.from_url(settings.CACHE_REDIS_URL, decode_responses=True)
+    return _aioredis_client_cache
+
+# 异步 Redis 缓存装饰器
+def async_cache_result(expire_seconds=600, prefix="async_cache", key_args=None):
+    key_args = key_args or []
+    def decorator(func):
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            redis_client = await get_aioredis_client()
+            if not redis_client:
+                return await func(*args, **kwargs)
+            force_refresh = kwargs.pop('force_refresh', False)
+            method_name = func.__qualname__
+            cache_key_parts = [prefix, method_name]
+            # 生成缓存 key
+            if key_args:
+                filtered_kwargs = {k: v for k, v in kwargs.items() if k in key_args}
+                if filtered_kwargs:
+                    try:
+                        kwargs_str = json.dumps(filtered_kwargs, sort_keys=True, default=str)
+                        cache_key_parts.append(kwargs_str)
+                    except Exception:
+                        pass
+            cache_key_str = ":".join(str(part) for part in cache_key_parts)
+            hashed_key = hashlib.md5(cache_key_str.encode()).hexdigest()
+            full_cache_key = f"{prefix}:{hashed_key}"
+            # 查询缓存
+            if not force_refresh:
+                try:
+                    cached_value_str = await redis_client.get(full_cache_key)
+                    if cached_value_str:
+                        return json.loads(cached_value_str)
+                except Exception:
+                    pass
+            # 未命中缓存
+            result = await func(*args, **kwargs)
+            try:
+                value_to_cache_str = json.dumps(result, default=str)
+                await redis_client.setex(full_cache_key, expire_seconds, value_to_cache_str)
+            except Exception:
+                pass
+            return result
+        return wrapper
+    return decorator

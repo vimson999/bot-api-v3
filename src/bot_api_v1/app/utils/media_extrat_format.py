@@ -14,6 +14,10 @@ from bot_api_v1.app.services.business.xhs_service import XHSService
 from bot_api_v1.app.constants.media_info import MediaPlatform
 
 class Media_extract_format:
+    def __init__(self):
+        pass
+
+
     def _extract_tags_from_douyin(self, video_info: Dict[str, Any]) -> List[str]:
         """从抖音视频信息中提取标签"""
         tags = []

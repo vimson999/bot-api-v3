@@ -11,7 +11,7 @@ import httpx
 import subprocess
 from pathlib import Path
 
-from bot_api_v1.app.core.cache import cache_result
+from bot_api_v1.app.core.cache import async_cache_result, cache_result
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.utils.decorators.log_service_call import F, log_service_call
 from bot_api_v1.app.core.context import request_ctx
@@ -606,6 +606,67 @@ class TikTokService:
         logger.info(f"Starting to get video info for url: {url}")
         logger.info(f"Starting to get video info for url: {url}")
         logger.info(f"Starting to get video info for url: {url}")
+
+
+    @async_cache_result(expire_seconds=600,prefix="tk_service")
+    async def get_user_profile_by_url(
+        self,
+        user_url: str,
+        log_extra: Dict[str, Any],
+        retries: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """
+        根据 TikTok/抖音用户主页 URL 获取详细的用户信息。
+
+        参数：
+            user_url: 用户主页的 URL（可以是分享链接或直接链接）。
+            log_extra: 日志附加信息字典。
+            retries: 底层操作的重试次数。
+
+        返回：
+            包含用户详细信息的字典。
+
+        异常：
+            UserFetchError: 如果无法获取用户信息或无法提取 sec_user_id。
+            InitializationError: 如果服务未正确初始化。
+        """
+        if not self.parameters:
+            raise InitializationError(
+                "服务未正确初始化。请使用 'async with' 语句。"
+            )
+
+        _retries = self.max_retries if retries is None else retries
+        logger.info(f"开始获取用户主页信息，URL: {user_url}", extra=log_extra)
+
+        try:
+            # 步骤 1: 解析 URL 以获取 sec_user_id
+            link_extractor = self._imports["Extractor"](self.parameters) # 对应抖音
+            extracted_sec_ids = await link_extractor.run(user_url, type_="user")
+
+            if not extracted_sec_ids or not isinstance(extracted_sec_ids, list) or len(extracted_sec_ids) == 0:
+                logger.warning(f"无法从 URL 提取 sec_user_id: {user_url}", extra=log_extra)
+                raise UserFetchError(f"未能在 URL 中找到 sec_user_id: {user_url}")
+
+            sec_user_id = extracted_sec_ids[0]
+            logger.debug(f"成功从 URL 提取 sec_user_id: {sec_user_id}，URL: {user_url}", extra=log_extra)
+
+            # 步骤 2: 使用获取到的 sec_user_id 调用已有的 get_user_info 方法
+            user_profile_data = await self.get_user_info(sec_user_id, retries=_retries)
+            
+            logger.info(f"成功获取用户主页信息，sec_user_id: {sec_user_id}，URL: {user_url}", extra=log_extra)
+            return user_profile_data
+
+        except UserFetchError:
+            logger.error(f"获取用户主页信息失败，URL: {user_url}（UserFetchError）", exc_info=True, extra=log_extra)
+            raise
+        except InitializationError:
+            logger.error(f"获取用户主页信息时服务未初始化，URL: {user_url}", exc_info=True, extra=log_extra)
+            raise
+        except Exception as e:
+            logger.error(f"获取用户主页信息发生未知错误，URL {user_url}，错误: {str(e)}", exc_info=True, extra=log_extra)
+            raise UserFetchError(
+                f"获取用户主页信息失败，URL {user_url}，错误: {str(e)}"
+            ) from e
 
 
 async def get_video_info(

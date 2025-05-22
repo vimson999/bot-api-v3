@@ -146,14 +146,14 @@ def test_download_note_media():
 if __name__ == "__main__":
     verify_node_modules()
 
-    print("测试获取笔记信息...")
-    test_get_note_info()
+    # print("测试获取笔记信息...")
+    # test_get_note_info()
     
     # print("\n测试搜索笔记...")
     # test_search_notes()
     
-    print("\n测试获取用户信息...")
-    test_get_user_info()
+    # print("\n测试获取用户信息...")
+    # test_get_user_info()
     
     # print("\n测试获取笔记评论...")
     # test_get_note_comments()

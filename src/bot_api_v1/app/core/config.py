@@ -163,6 +163,8 @@ class Settings(BaseSettings):
     OPEN_ROUTER_API_MODEL_QW : str = os.getenv("OPEN_ROUTER_API_MODEL_QW","deepseek/deepseek-prover-v2:free")
     OPEN_ROUTER_API_URL : str = os.getenv("OPEN_ROUTER_API_URL","https://openrouter.ai/api/v1")
 
+    BASIC_CONSUME_POINT : int = int(os.getenv("BASIC_CONSUME_POINT", "5"))
+
     # 其他配置 (保持不变)
 
     class Config:
