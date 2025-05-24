@@ -2,6 +2,8 @@ import re
 from typing import Dict, Any, Optional, Tuple, Union, List
 from datetime import datetime
 
+from celery.platforms import _platform
+
 from bot_api_v1.app.core.logger import logger
 from bot_api_v1.app.core.context import request_ctx
 from bot_api_v1.app.services.business import open_router_service
@@ -889,3 +891,45 @@ class MediaService:
                 attempt += 1
         logger.error(f"多次重试后仍未获取到用户主页信息", extra=log_extra)
         raise MediaError(f"获取抖音用户主页信息失败: {last_exception}")
+
+    
+    # @async_cache_result(expire_seconds=600,prefix="media_service")
+    async def async_get_comment_by_url(self, video_url: str, log_extra: Dict[str, Any]) -> List[Dict[str, Any]]:
+        platform = self.identify_platform(video_url)
+        logger.info(f"async_get_comment_by_url-识别平台: {platform}", extra=log_extra)
+        try:
+            if platform == MediaPlatform.DOUYIN:
+                logger.info(f"async_get_comment_by_url-调用抖音评论接口", extra=log_extra)
+                async with self.tiktok_service as service:
+                    comments = await service.get_all_video_comments(video_url, platform=platform,log_extra=log_extra) 
+                result = {
+                    "platform": platform,
+                    "comments": comments,
+                    "status": "success"
+                }
+            elif platform == MediaPlatform.XIAOHONGSHU:
+                logger.info(f"async_get_comment_by_url-调用小红书评论接口", extra=log_extra)
+                comments = await self.xhs_service.async_get_note_all_comment(video_url, log_extra)
+                result = {
+                    "platform": platform,
+                    "comments": comments,
+                    "status": "success"
+                }
+            else:
+                logger.warning(f"async_get_comment_by_url-暂不支持的平台: {platform}", extra=log_extra)
+                result = {
+                    "platform": platform,
+                    "comments": [],
+                    "status": "unsupported",
+                    "msg": f"暂不支持的平台: {platform}"
+                }
+            logger.info(f"async_get_comment_by_url-获取评论成功", extra=log_extra)
+            return result
+        except Exception as e:
+            logger.error(f"async_get_comment_by_url-获取评论失败: {str(e)}", extra=log_extra)
+            return {
+                "platform": platform,
+                "comments": [],
+                "status": "error",
+                "msg": str(e)
+            }

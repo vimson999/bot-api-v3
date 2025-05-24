@@ -4,6 +4,8 @@ import time
 from datetime import datetime
 import sys
 from celery.signals import worker_process_init, worker_process_shutdown
+from celery.schedules import crontab
+
 
 from celery import Celery
 # !! 导入 config 中的 settings 对象 !!
@@ -61,3 +63,20 @@ def shutdown_worker_process(sender=None, **kwargs):
         CeleryLogHandler._flush_logs()
     except Exception as e:
         print(f"[{datetime.now()}] ERROR: 工作进程关闭时刷新日志失败: {e}", file=sys.stderr)
+
+
+
+
+celery_app.conf.beat_schedule = {
+    'daily-video-update-at-noon': {
+        'task': 'tasks.daily_video_data_update_celery', # 任务的名称
+        'schedule': crontab(hour=1, minute=0),     # 每天中午12:00执行
+        # 'args': (arg1, arg2), # 如果任务需要参数
+    },
+    'daily-kol-update-at-one-am': {
+        'task': 'tasks.daily_kol_data_update_celery',
+        'schedule': crontab(hour=2, minute=0),      # 每天凌晨1:00执行
+    },
+    # 您可以添加更多的定时任务
+}
+celery_app.conf.timezone = settings.TIMEZONE # 确保时区正确

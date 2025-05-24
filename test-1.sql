@@ -1010,13 +1010,12 @@ curl -X POST \
 视频----
 内含广告信息
 与今日关联热门、热点话题、挑战
+评论详情列表
 评论的词云
 高赞评论
-评论详情列表
-留言用户画像标签
-较同作者其他视频相比值
-较昨日新增播放/点赞/收藏/分享/评论/留言数
-7日新增播放/点赞/收藏/分享/评论/留言数
+较同作者其他视频相比值 点赞/收藏/分享/评论数
+同视频较昨日新增播放/点赞/收藏/分享/评论数
+同视频7日新增播放/点赞/收藏/分享/评论数
 
 
 
@@ -1036,8 +1035,192 @@ KOL
 
 
 curl -X POST \
-  'http://localhost:8083/api/media/upro' \
+  'http://localhost:8083/api/tt/upro' \
   -H 'Content-Type: application/json' \
   -d '{
     "url": "https://www.douyin.com/user/MS4wLjABAAAAyeRQDmzlFJJ-WJ3mfkvN2IfTei6Mm7nTwkX5wz5hfxk"
   }'
+
+
+curl -X POST \
+  'http://localhost:8083/api/tt/vcl' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://v.douyin.com/YX-HGKSVNzU"
+  }'
+
+
+curl -X POST \
+  'http://localhost:8083/api/tt/vcl' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://www.douyin.com/video/7490501357934333196"
+  }'
+
+curl -X POST \
+  'http://localhost:8083/api/tt/vcl' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "url": "https://www.xiaohongshu.com/explore/67e2b3f900000000030286ce?xsec_token=ABsttmnMANeopanZhB7mwrTWl3izLUb0_nFBSUxqS4EZk=&xsec_source=pc_feed"
+  }'
+
+
+
+
+
+-- 1. 视频元数据表
+CREATE TABLE IF NOT EXISTS meta_video_info (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    platform VARCHAR(50) NOT NULL,
+    platform_video_id VARCHAR(255) NOT NULL,
+    original_url TEXT NOT NULL,
+    title TEXT,
+    description TEXT,
+    content_text TEXT,
+    tags TEXT[], -- 标签数组
+    initial_play_count BIGINT DEFAULT 0,
+    initial_like_count BIGINT DEFAULT 0,
+    initial_comment_count BIGINT DEFAULT 0,
+    initial_share_count BIGINT DEFAULT 0,
+    initial_collect_count BIGINT DEFAULT 0,
+    cover_url TEXT,
+    video_url TEXT,
+    duration_seconds INTEGER,
+    published_at TIMESTAMP WITH TIME ZONE,
+    uploader_user_id UUID REFERENCES meta_user(id) ON DELETE SET NULL, -- 关联到 meta_user 表
+    data_last_fetched_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    status SMALLINT DEFAULT 1 NOT NULL CHECK (status IN (0, 1, 2)),
+    memo TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_video_info_platform_platform_video_id ON meta_video_info (platform, platform_video_id);
+-- CREATE INDEX IF NOT EXISTS idx_meta_video_info_uploader_user_id ON meta_video_info (uploader_user_id);
+-- CREATE INDEX IF NOT EXISTS idx_meta_video_info_published_at ON meta_video_info (published_at DESC);
+-- CREATE INDEX IF NOT EXISTS idx_meta_video_info_tags ON meta_video_info USING GIN (tags); -- GIN索引用于数组搜索
+
+COMMENT ON TABLE meta_video_info IS '存储视频的核心元数据';
+COMMENT ON COLUMN meta_video_info.platform_video_id IS '视频在源平台的唯一ID';
+COMMENT ON COLUMN meta_video_info.tags IS '视频标签，包括普通标签和Hashtags';
+COMMENT ON COLUMN meta_video_info.uploader_user_id IS '上传者/KOL在meta_user表中的ID';
+COMMENT ON COLUMN meta_video_info.data_last_fetched_at IS '本条记录数据最后从源平台拉取的时间';
+
+
+-- 2. 视频日统计表
+CREATE TABLE IF NOT EXISTS statistics_video_daily (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    video_info_id UUID NOT NULL REFERENCES meta_video_info(id) ON DELETE CASCADE,
+    snapshot_date DATE NOT NULL,
+    play_count BIGINT DEFAULT 0,
+    like_count BIGINT DEFAULT 0,
+    comment_count BIGINT DEFAULT 0,
+    share_count BIGINT DEFAULT 0,
+    collect_count BIGINT DEFAULT 0,
+    status SMALLINT DEFAULT 1 NOT NULL CHECK (status IN (0, 1, 2)),
+    memo TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- CREATE UNIQUE INDEX IF NOT EXISTS idx_statistics_video_daily_video_snapshot ON statistics_video_daily (video_info_id, snapshot_date);
+-- CREATE INDEX IF NOT EXISTS idx_statistics_video_daily_snapshot_date ON statistics_video_daily (snapshot_date DESC);
+
+COMMENT ON TABLE statistics_video_daily IS '存储视频每日的动态统计数据快照';
+COMMENT ON COLUMN statistics_video_daily.video_info_id IS '关联的meta_video_info表中的视频ID';
+COMMENT ON COLUMN statistics_video_daily.snapshot_date IS '统计数据快照的日期';
+
+
+-- 3. KOL日统计表
+CREATE TABLE IF NOT EXISTS statistics_kol_daily (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES meta_user(id) ON DELETE CASCADE, -- 关联到 meta_user 表
+    snapshot_date DATE NOT NULL,
+    follower_count BIGINT DEFAULT 0,
+    following_count BIGINT DEFAULT 0,
+    total_videos_count INTEGER DEFAULT 0,
+    total_likes_received_on_videos BIGINT DEFAULT 0,
+    total_comments_received_on_videos BIGINT DEFAULT 0,
+    total_shares_on_videos BIGINT DEFAULT 0,
+    total_collections_on_videos BIGINT DEFAULT 0,
+    total_plays_on_videos BIGINT DEFAULT 0,
+    status SMALLINT DEFAULT 1 NOT NULL CHECK (status IN (0, 1, 2)),
+    memo TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- CREATE UNIQUE INDEX IF NOT EXISTS idx_statistics_kol_daily_user_snapshot ON statistics_kol_daily (user_id, snapshot_date);
+-- CREATE INDEX IF NOT EXISTS idx_statistics_kol_daily_snapshot_date ON statistics_kol_daily (snapshot_date DESC);
+
+COMMENT ON TABLE statistics_kol_daily IS '存储KOL每日的动态统计数据快照';
+COMMENT ON COLUMN statistics_kol_daily.user_id IS '关联的meta_user表中的用户ID (KOL)';
+COMMENT ON COLUMN statistics_kol_daily.follower_count IS 'KOL的粉丝数';
+COMMENT ON COLUMN statistics_kol_daily.total_videos_count IS 'KOL发布的作品总数';
+COMMENT ON COLUMN statistics_kol_daily.total_likes_received_on_videos IS 'KOL所有作品累计获得的赞数';
+
+-- -- 触发器函数，用于自动更新 updated_at 字段
+-- CREATE OR REPLACE FUNCTION trigger_set_timestamp()
+-- RETURNS TRIGGER AS $$
+-- BEGIN
+--   NEW.updated_at = NOW();
+--   RETURN NEW;
+-- END;
+-- $$ LANGUAGE plpgsql;
+
+-- -- 为每个表创建触发器
+-- CREATE TRIGGER set_timestamp_meta_video_info
+-- BEFORE UPDATE ON meta_video_info
+-- FOR EACH ROW
+-- EXECUTE FUNCTION trigger_set_timestamp();
+
+-- CREATE TRIGGER set_timestamp_statistics_video_daily
+-- BEFORE UPDATE ON statistics_video_daily
+-- FOR EACH ROW
+-- EXECUTE FUNCTION trigger_set_timestamp();
+
+-- CREATE TRIGGER set_timestamp_statistics_kol_daily
+-- BEFORE UPDATE ON statistics_kol_daily
+-- FOR EACH ROW
+-- EXECUTE FUNCTION trigger_set_timestamp();
+
+
+CREATE TABLE IF NOT EXISTS meta_kol_info (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    platform VARCHAR(50) NOT NULL,
+    platform_kol_id VARCHAR(255) NOT NULL,
+    profile_url TEXT,
+    nickname VARCHAR(255),
+    bio TEXT,
+    avatar_url TEXT,
+    cover_url TEXT,
+    gender SMALLINT CHECK (gender IN (0, 1, 2)), -- 0:未知, 1:男, 2:女
+    region VARCHAR(100),
+    city VARCHAR(100),
+    country VARCHAR(100),
+    verified BOOLEAN DEFAULT FALSE,
+    verified_reason TEXT,
+    initial_follower_count BIGINT DEFAULT 0,
+    initial_following_count BIGINT DEFAULT 0,
+    initial_video_count INTEGER DEFAULT 0,
+    data_last_fetched_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    status SMALLINT DEFAULT 1 NOT NULL CHECK (status IN (0, 1, 2)), -- 0:失效, 1:正常, 2:待审核
+    memo TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
+-- CREATE UNIQUE INDEX IF NOT EXISTS idx_meta_kol_info_platform_platform_kol_id ON meta_kol_info (platform, platform_kol_id);
+-- CREATE INDEX IF NOT EXISTS idx_meta_kol_info_nickname ON meta_kol_info (nickname); -- 如果常按昵称搜索
+
+COMMENT ON TABLE meta_kol_info IS '存储KOL/博主的元数据信息';
+COMMENT ON COLUMN meta_kol_info.platform_kol_id IS 'KOL在源平台的唯一ID';
+COMMENT ON COLUMN meta_kol_info.data_last_fetched_at IS '本条记录数据最后从源平台拉取的时间';
+
+
+
+# 启动 Celery Worker (确保它能加载到您的任务定义)
+celery -A bot_api_v1.app.tasks.celery_app worker -l info -Q celery,media_extraction,logging,your_scheduled_task_queue # 可以为定时任务指定单独队列
+
+# 启动 Celery Beat (在另一个终端或后台)
+celery -A bot_api_v1.app.tasks.celery_app beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler # 如果使用数据库存储调度状态，否则默认即可

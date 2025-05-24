@@ -6,6 +6,7 @@ from .routers import media  # 导入新的媒体路由
 from .routers import monitoring  # 导入监控路由
 from .routers import wechat_mp
 from .routers import ticket
+from .routers import test
 from fastapi.staticfiles import StaticFiles
 import os
 
@@ -18,5 +19,6 @@ router.include_router(media.router)  # 注册媒体路由
 router.include_router(monitoring.router, prefix="/monitoring")  # 注册监控路由
 router.include_router(wechat_mp.router)  # 注册微信公众号路由
 router.include_router(ticket.router)  # 注册工单路由
+router.include_router(test.router)  
 
 # logger = setup_logger()

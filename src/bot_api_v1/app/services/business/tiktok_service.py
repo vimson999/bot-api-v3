@@ -156,34 +156,49 @@ class TikTokService:
                 logger.debug(f"Changed working directory to {tiktok_root} (Required by submodule?)")
             # --- 工作目录更改结束 ---
 
-            # --- 正确的导入语句 (基于子模块根目录在 sys.path 中) ---
-            # 现在需要从 src 开始导入
+            # # --- 正确的导入语句 (基于子模块根目录在 sys.path 中) ---
+            # # 现在需要从 src 开始导入
+            # from src.config import Settings, Parameter
+            # from src.custom import PROJECT_ROOT # 假设 PROJECT_ROOT 在 src/custom/__init__.py 或 src/custom.py 中
+            # from src.tools import ColorfulConsole
+            # from src.module import Cookie
+            # from src.interface import Detail, User
+            # from src.link import Extractor
+            # from src.extract import Extractor as DataExtractor # 别名保持不变
+            # from src.record import BaseLogger
+
+            # 从子模块的 src 目录导入所需组件
             from src.config import Settings, Parameter
-            from src.custom import PROJECT_ROOT # 假设 PROJECT_ROOT 在 src/custom/__init__.py 或 src/custom.py 中
+            from src.custom import PROJECT_ROOT # 这是子模块内部的 PROJECT_ROOT
             from src.tools import ColorfulConsole
             from src.module import Cookie
-            from src.interface import Detail, User
-            from src.link import Extractor
-            from src.extract import Extractor as DataExtractor # 别名保持不变
+            from src.interface import Detail, User, Comment
+            from src.interface.detail_tiktok import DetailTikTok # TikTok 视频详情接口
+            from src.interface.info_tiktok import InfoTikTok # TikTok 用户简略信息接口 (替代User)
+            from src.interface.comment_tiktok import CommentTikTok
+            from src.link import Extractor, ExtractorTikTok
+            from src.extract import Extractor as DataExtractor 
             from src.record import BaseLogger
 
-            # 存储导入的模块/类，供服务实例使用
             self._imports = {
                 "Settings": Settings,
                 "Parameter": Parameter,
-                "PROJECT_ROOT": PROJECT_ROOT,
+                "PROJECT_ROOT": PROJECT_ROOT, # 子模块的 PROJECT_ROOT
                 "ColorfulConsole": ColorfulConsole,
                 "Cookie": Cookie,
-                "Detail": Detail,
-                "User": User,
+                "Detail": Detail, # 抖音视频详情
+                "DetailTikTok": DetailTikTok, # TikTok 视频详情
+                "User": User, # 抖音用户信息
+                "InfoTikTok": InfoTikTok, # TikTok 用户信息 (通常 secUid + uniqueId 可获取)
+                "Comment": Comment,
+                "CommentTikTok": CommentTikTok,
                 "Extractor": Extractor,
+                "ExtractorTikTok": ExtractorTikTok,
                 "DataExtractor": DataExtractor,
                 "BaseLogger": BaseLogger
             }
-            # --- 导入结束 ---
 
-            logger.debug("Successfully imported TikTok downloader modules using submodule root path strategy")
-
+            logger.debug("成功导入 TikTok Downloader 子模块的所需组件。")
         except ImportError as e:
             # 打印更详细的错误追踪信息，帮助调试是哪个导入失败
             logger.error(f"Failed to import required modules: {str(e)}", exc_info=True)
@@ -669,6 +684,148 @@ class TikTokService:
             ) from e
 
 
+    # @gate_keeper() # 根据您的项目需求决定是否保留
+    # @log_service_call(method_type="video_comments", tollgate="xx-z") # tollgate 值应根据您的业务逻辑调整
+    # @async_cache_result(expire_seconds=600,prefix="tk_service")
+    async def get_all_video_comments(
+        self,
+        video_url: str,
+        fetch_replies: bool = False,
+        max_comment_pages: Optional[int] = None,
+        comments_per_page: int = 20, # 抖音/TikTok 单次请求通常返回的评论数量
+        replies_per_comment_page: int = 3, # 如果 fetch_replies 为 True, TikTokDownloader 默认尝试获取的回复数
+        platform: Optional[str] = None ,# 可选参数，用于明确指定平台 "douyin" 或 "tiktok"
+        log_extra :  Dict[str, Any] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        获取指定抖音/TikTok视频URL的所有评论。
+
+        参数:
+            video_url (str): 视频的URL。
+            fetch_replies (bool): 是否获取每条评论的回复。默认为 False。
+            max_comment_pages (Optional[int]): 获取评论的最大页数（请求次数）。
+                                             如果为 None，则会尝试获取所有可获取的评论页。
+                                             注意：子模块内部有其自身的 `max_pages` 默认值。
+            comments_per_page (int): 每次请求获取的评论数量。
+            replies_per_comment_page (int): 如果 fetch_replies 为 True，每次请求评论的回复时，
+                                            尝试获取的回复数量。
+            platform (Optional[str]): 明确指定平台 "douyin" 或 "tiktok"。
+                                      如果为 None，则尝试从URL推断。
+
+        返回:
+            List[Dict[str, Any]]: 评论列表，每个元素是一个包含评论信息的字典。
+
+        可能抛出的异常:
+            CommentError: 如果获取评论过程中发生特定于评论的错误。
+            VideoFetchError: 如果无法从URL中提取视频ID。
+            InitializationError: 如果服务未正确初始化。
+            PlatformError: 如果无法确定平台或平台不受支持。
+            TikTokError: 其他与TikTok/抖音服务相关的通用错误。
+        """
+        if not self.parameters:
+            raise InitializationError("服务未正确初始化，请确保在 'async with' 语句中使用。")
+        logger.info(f"开始为视频URL获取所有评论: {video_url}", extra=log_extra)
+
+        try:
+            current_platform = platform
+            logger.debug(f"当前操作平台: {current_platform}", extra=log_extra)
+
+            # 根据平台选择正确的链接提取器和评论接口类
+            if current_platform == "tiktok":
+                link_extractor_cls = self._imports.get("ExtractorTikTok")
+                comment_interface_cls = self._imports.get("CommentTikTok")
+                if not link_extractor_cls or not comment_interface_cls:
+                    raise InitializationError("TikTok 的链接提取器 (ExtractorTikTok) 或评论接口 (CommentTikTok) 未能成功导入。")
+            else: # 默认为抖音
+                link_extractor_cls = self._imports.get("Extractor")
+                comment_interface_cls = self._imports.get("Comment")
+                if not link_extractor_cls or not comment_interface_cls:
+                    raise InitializationError("抖音的链接提取器 (Extractor) 或评论接口 (Comment) 未能成功导入。")
+            
+            link_extractor = link_extractor_cls(self.parameters)
+            video_ids = await link_extractor.run(video_url, type_="detail")
+
+            if not video_ids or not isinstance(video_ids, list) or not video_ids[0]:
+                logger.warning(f"无法从URL中提取视频ID (detail_id): {video_url}", extra=log_extra)
+                raise VideoFetchError(f"未能从URL {video_url} 中找到有效的视频ID。")
+
+            detail_id = video_ids[0]
+            logger.debug(f"从URL {video_url} 成功提取到视频ID (detail_id): {detail_id}", extra=log_extra)
+
+            # --- 步骤 2: 实例化并运行评论获取器 ---
+            # `Comment` 类内部的 `pages` 参数控制总的API请求次数。
+            # 如果 `max_comment_pages` 未指定，则使用服务初始化时 `Parameter` 对象中定义的 `max_pages`。
+            effective_max_pages = max_comment_pages if max_comment_pages is not None else self.parameters.max_pages
+            
+            # 根据平台选择使用的 cookie
+            current_cookie = None
+            if self.cookie: # 如果服务初始化时传入了cookie
+                current_cookie = self.cookie
+            elif current_platform == "tiktok":
+                current_cookie = self.parameters.cookie_str_tiktok or self.parameters.cookie_dict_tiktok
+            # else: # douyin
+            #     current_cookie = self.parameters.cookie_str or self.parameters.cookie_dict
+            
+            if isinstance(current_cookie, dict): # Comment 类期望 string 类型的 cookie
+                current_cookie_str = self._imports["Cookie"].cookie_dict_to_str_for_header(current_cookie) # 假设有此方法或类似
+            else:
+                current_cookie_str = current_cookie
+
+
+            comment_fetcher = comment_interface_cls(
+                self.parameters,
+                cookie=current_cookie_str, # 传递合适的 cookie 字符串
+                item_id=detail_id,
+                pages=effective_max_pages,
+                count=comments_per_page,
+                reply=fetch_replies,
+                count_reply=replies_per_comment_page 
+            )
+
+            logger.debug(f"开始请求视频ID {detail_id} 的评论数据...", extra=log_extra)
+            raw_comments_data = await comment_fetcher.run() # error_text 参数可用于自定义无评论时的日志信息
+
+            if not raw_comments_data: # 可能返回空列表或None
+                logger.info(f"视频ID {detail_id} 没有评论，或未能成功获取评论。", extra=log_extra)
+                return [] 
+
+            logger.debug(f"成功获取视频ID {detail_id} 的原始评论数据共 {len(raw_comments_data)} 条。", extra=log_extra)
+
+            # --- 步骤 3: 处理和格式化评论数据 ---
+            data_extractor = self._imports["DataExtractor"](self.parameters)
+            dummy_recorder = self.DummyRecorder() # 使用虚拟记录器，因为我们只提取数据，不保存到子模块的存储
+
+            processed_comments = await data_extractor.run(
+                raw_comments_data,
+                dummy_recorder,
+                type_="comment", # 告知提取器处理的是评论数据
+                tiktok=(current_platform == "tiktok") # 传递平台信息给提取器
+            )
+
+            logger.info(f"成功获取并处理了 {len(processed_comments)} 条评论 (视频ID: {detail_id}, URL: {video_url})。", extra=log_extra)
+            return processed_comments
+
+        except VideoFetchError as vfe:
+            logger.error(f"为评论提取视频ID失败 (URL: {video_url}): {str(vfe)}", exc_info=True, extra=log_extra)
+            raise # 此类错误通常表示输入URL有问题，直接抛出
+        # except PlatformError as pe:
+        #     logger.error(f"平台处理错误 (URL: {video_url}): {str(pe)}", exc_info=True, extra=log_extra)
+        #     raise
+        except InitializationError as ie:
+            logger.error(f"服务初始化错误，无法获取评论 (URL: {video_url}): {str(ie)}", exc_info=True, extra=log_extra)
+            raise
+        # except TikTokError as te: # 捕获子模块或服务定义的其他 TikTokError
+        #     logger.error(f"获取评论时发生TikTok/抖音服务相关错误 (URL: {video_url}): {str(te)}", exc_info=True, extra=log_extra)
+        #     raise CommentError(f"获取视频评论失败: {str(te)}") from te
+        except Exception as e:
+            # 对于未知错误，记录详细信息并包装成 CommentError
+            logger.error(f"获取视频评论时发生意外错误 (URL: {video_url}): {str(e)}", exc_info=True, extra=log_extra)
+            # raise CommentError(f"获取视频 {video_url} 的评论时发生意外错误: {str(e)}") from e
+            raise
+
+
+
+
 async def get_video_info(
     url: str, 
     cookie: Optional[str] = None, 
@@ -726,3 +883,5 @@ async def get_user_info(
     ) as service:
         return await service.get_user_info(sec_user_id)
 
+
+    

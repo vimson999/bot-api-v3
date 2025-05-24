@@ -15,6 +15,7 @@ from bot_api_v1.app.tasks.celery_service_logic import prepare_media_for_transcri
 from bot_api_v1.app.services.business.script_service_sync import ScriptService_Sync
 from bot_api_v1.app.services.business.open_router_service import OpenRouterService
 from bot_api_v1.app.tasks.celery_app import celery_app
+from bot_api_v1.app.services.helper.daily_media_update_helper import run_daily_video_update, run_daily_kol_update # 假设您将脚本放到了这里
 
 
 
@@ -831,3 +832,31 @@ def save_logs_batch(self, logs_data):
 #             }
 #     finally:
 #         loop.close()  # 确保事件循环被关闭
+
+
+
+
+@celery_app.task(name="tasks.daily_video_data_update_celery")
+def daily_video_data_update_celery_task():
+    logger.info("开始 Celery 定时任务：每日视频数据更新...")
+    try:
+        run_daily_video_update() #直接调用您的同步函数
+        logger.info("Celery 定时任务：每日视频数据更新完成。")
+        return {"status": "success", "message": "Video data update completed."}
+    except Exception as e:
+        logger.error(f"Celery 定时任务：每日视频数据更新失败: {e}", exc_info=True)
+        # 可以选择性地重新引发异常，让 Celery 记录任务失败
+        # raise
+        return {"status": "failed", "error": str(e)}
+
+@celery_app.task(name="tasks.daily_kol_data_update_celery")
+def daily_kol_data_update_celery_task():
+    logger.info("开始 Celery 定时任务：每日KOL数据更新...")
+    try:
+        run_daily_kol_update() # 假设您也有一个类似的KOL更新函数
+        logger.info("Celery 定时任务：每日KOL数据更新完成。")
+        return {"status": "success", "message": "KOL data update completed."}
+    except Exception as e:
+        logger.error(f"Celery 定时任务：每日KOL数据更新失败: {e}", exc_info=True)
+        return {"status": "failed", "error": str(e)}
+

@@ -103,6 +103,14 @@ class MediaContentResponse(BaseModel):
     publish_time: Optional[datetime] = Field(None, description="发布时间")
     update_time: Optional[datetime] = Field(None, description="更新时间")
 
+    # 新增字段
+    # comments_summary: Optional[Dict[str, Any]] = Field(None, description="评论摘要，如高赞评论、词云数据")
+    # # comment_details: Optional[List[CommentInfo]] = Field(None, description="评论详情列表（可能数据量大，酌情返回）")
+    # comparison_with_author_videos: Optional[VideoComparisonStats] = Field(None, description="与同作者其他视频的比较统计")
+    # daily_growth_stats: Optional[VideoGrowthStats] = Field(None, description="日增长统计")
+    # weekly_growth_stats: Optional[VideoGrowthStats] = Field(None, description="周增长统计")
+
+
 class MediaBasicContentResponse(BaseModel):
     platform: str = Field(..., description="平台名称 (douyin, xiaohongshu)")
     video_id: str = Field(..., description="视频ID")
@@ -121,3 +129,86 @@ class MediaBasicContentResponse(BaseModel):
 
 class MediaExtractResponse(BaseResponse[MediaContentResponse]):
     request_context: Optional[RequestContext] = Field(None, description="请求上下文信息")
+
+
+
+
+
+
+
+
+# --- 请求与响应模型 ---
+
+class MediaExtractRequest(BaseModel):
+    """媒体内容提取请求模型"""
+    url: HttpUrl = Field(..., description="媒体URL地址")
+    extract_text: bool = Field(True, description="是否提取文案内容")
+    include_comments: bool = Field(False, description="是否包含评论数据")
+
+    @validator('url')
+    def validate_url(cls, v):
+        if not str(v).startswith(('http://', 'https://')):
+            raise ValueError('必须是有效的HTTP或HTTPS URL')
+        return str(v)
+
+class MediaExtractSubmitResponse(BaseModel):
+    """提交异步提取任务后的响应模型"""
+    code: int = 202
+    message: str
+    task_id: str
+    root_trace_key: str
+    request_context: RequestContext
+
+class MediaExtractResponse(BaseModel): # 复用或重命名旧的响应模型
+    """提取媒体内容（同步或完成后）的响应模型"""
+    code: int = 200
+    message: str
+    data: Optional[MediaContentResponse] = None # MediaContentResponse 需已定义
+    request_context: RequestContext
+
+
+class MediaExtractBasicContentResponse(BaseModel): # 复用或重命名旧的响应模型
+    """提取媒体内容（同步或完成后）的响应模型"""
+    code: int = 200
+    message: str
+    data: Optional[MediaBasicContentResponse] = None # MediaContentResponse 需已定义
+    request_context: RequestContext
+
+class MediaExtractStatusResponse(BaseModel):
+    """查询异步提取任务状态的响应模型"""
+    code: int
+    message: str
+    task_id: str
+    root_trace_key: str
+    status: str # PENDING, running, completed, failed, cancelled, ...
+    result: Optional[MediaContentResponse] = None # 任务成功时的结果
+    data: Optional[MediaContentResponse] = None # MediaContentResponse 需已定义
+    error: Optional[str] = None # 任务失败时的错误信息
+    request_context: RequestContext
+
+
+
+
+class SearchNoteRequest(BaseModel):
+    platform: str
+    query: str
+    num: int = 10
+    qsort: str = "general"
+
+class SearchNoteData(BaseModel):
+    memo: str = ""
+    file_link: str = ""
+    total_required: int = 10
+    # qsort: str = "general"
+
+class SearchNoteResponse(BaseModel):
+    code: int = 200
+    message: str = "success"
+    data: SearchNoteData = {}
+    request_context: RequestContext
+
+class KOLResponse(BaseModel):
+    code: int = 200
+    message: str = "success"
+    data: Dict[str, Any] = {}
+    request_context: RequestContext

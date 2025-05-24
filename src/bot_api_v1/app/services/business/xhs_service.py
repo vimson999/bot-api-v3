@@ -747,7 +747,15 @@ class XHSService:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, self.get_search_some_note, trace_key,platform,query,num,sort)
 
-    def get_note_all_comment(self, note_url: str) -> List[Dict[str, Any]]:
+
+
+    async def async_get_note_all_comment(self, note_url: str,log_extra:Dict[str, Any]) -> Dict[str, Any]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_note_all_comment, note_url ,log_extra)
+    
+
+    # @async_cache_result(expire_seconds=600,prefix="xhs_service")
+    def get_note_all_comment(self, note_url: str,log_extra:Dict[str, Any]) -> List[Dict[str, Any]]:
         """
         搜索小红书笔记信息
 
@@ -758,9 +766,9 @@ class XHSService:
         Returns:
             List[Dict[str, Any]]: 搜索结果列表，每个结果包含笔记信息
         """
-        logger.info(f"开始搜索小红书笔记: {note_url}")
+        logger.info(f"开始搜索小红书笔记-get_note_all_comment: {note_url}",extra=log_extra)
         
-        note_url = r'https://www.xiaohongshu.com/explore/6824a2aa000000000f03a916?xsec_token=YBjpTNSB7OwG_Q9055_0PqwSPqZsFEHNVBbh81qN6xJZg%3D&xsec_source=pc_creatormng'
+        # note_url = r'https://www.xiaohongshu.com/explore/6824a2aa000000000f03a916?xsec_token=YBjpTNSB7OwG_Q9055_0PqwSPqZsFEHNVBbh81qN6xJZg%3D&xsec_source=pc_creatormng'
         success, msg, note_all_comment = self.xhs_apis.get_note_all_comment(note_url, self.cookies_str)
         return success, msg, note_all_comment
 
