@@ -5,22 +5,9 @@ from datetime import datetime
 import sys
 from celery.signals import worker_process_init, worker_process_shutdown
 from celery.schedules import crontab
-
-
+from bot_api_v1.app.core.config import settings 
 from celery import Celery
-# !! 导入 config 中的 settings 对象 !!
-# 确保导入路径正确
-try:
-     from bot_api_v1.app.core.config import settings 
-except ImportError:
-     # Fallback 或提示错误
-     print("错误：无法从 bot_api_v1.app.core.config 导入 settings！请检查路径和 __init__.py 文件。")
-     # 或者尝试绝对路径（如果你的项目结构和运行方式支持）
-     # from src.bot_api_v1.app.core.config import settings
-     raise # 抛出异常阻止继续
 
-# 创建 Celery 应用实例
-# 使用 settings 中的配置项
 celery_app = Celery(
     settings.PROJECT_NAME, # 使用项目名称
     broker=settings.CELERY_BROKER_URL,
@@ -70,12 +57,12 @@ def shutdown_worker_process(sender=None, **kwargs):
 celery_app.conf.beat_schedule = {
     'daily-video-update-at-noon': {
         'task': 'tasks.daily_video_data_update_celery', # 任务的名称
-        'schedule': crontab(hour=1, minute=0),     # 每天中午12:00执行
+        'schedule': crontab(hour=1, minute=0),     
         # 'args': (arg1, arg2), # 如果任务需要参数
     },
     'daily-kol-update-at-one-am': {
         'task': 'tasks.daily_kol_data_update_celery',
-        'schedule': crontab(hour=2, minute=0),      # 每天凌晨1:00执行
+        'schedule': crontab(hour=3, minute=0),      
     },
     # 您可以添加更多的定时任务
 }

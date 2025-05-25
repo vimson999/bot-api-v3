@@ -550,7 +550,6 @@ def run_transcription_task(
 
 
 
-from bot_api_v1.app.services.log_service import LogService
 @celery_app.task(
     name="tasks.save_log_to_db",
     bind=True,
@@ -836,6 +835,8 @@ def save_logs_batch(self, logs_data):
 
 
 
+
+
 @celery_app.task(name="tasks.daily_video_data_update_celery")
 def daily_video_data_update_celery_task():
     logger.info("开始 Celery 定时任务：每日视频数据更新...")
@@ -853,7 +854,7 @@ def daily_video_data_update_celery_task():
 def daily_kol_data_update_celery_task():
     logger.info("开始 Celery 定时任务：每日KOL数据更新...")
     try:
-        run_daily_kol_update() # 假设您也有一个类似的KOL更新函数
+        # run_daily_kol_update() # 假设您也有一个类似的KOL更新函数
         logger.info("Celery 定时任务：每日KOL数据更新完成。")
         return {"status": "success", "message": "KOL data update completed."}
     except Exception as e:

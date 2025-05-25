@@ -771,3 +771,38 @@ class MediaDataService:
             db_session.rollback()
             logger.error(f"[TASK_LOG_SYNC] 更新任务 '{getattr(log_entry, 'task_name', 'UnknownTask')}' 结束状态时失败: {e}", exc_info=True)
             return None
+
+
+    # 在 MediaDataService 类中添加新方法
+    def get_active_videos_count_sync(self, db_session: Session, platform: Optional[str] = None) -> int:
+        """
+        [同步] 获取活跃视频的总数。
+        """
+        try:
+            stmt = select(func.count(MetaVideoInfo.id)).where(MetaVideoInfo.status == 1)
+            if platform:
+                stmt = stmt.where(MetaVideoInfo.platform == platform)
+
+            count = db_session.execute(stmt).scalar_one_or_none() or 0
+            logger.info(f"[SYNC_COUNT] 获取到 {count} 条活跃视频 (平台: {platform or '所有'})。")
+            return count
+        except Exception as e:
+            logger.error(f"[SYNC_COUNT] 获取活跃视频总数时发生错误: {e}", exc_info=True)
+            return 0 # 出错时返回0
+
+
+    def get_active_kols_count_sync(self, db_session: Session, platform: Optional[str] = None) -> int:
+        """
+        [同步] 获取活跃KOL的总数。
+        """
+        try:
+            stmt = select(func.count(MetaKolInfo.id)).where(MetaKolInfo.status == 1)
+            if platform:
+                stmt = stmt.where(MetaKolInfo.platform == platform)
+
+            count = db_session.execute(stmt).scalar_one_or_none() or 0
+            logger.info(f"[SYNC_COUNT] 获取到 {count} 条活跃KOL (平台: {platform or '所有'})。")
+            return count
+        except Exception as e:
+            logger.error(f"[SYNC_COUNT] 获取活跃KOL总数时发生错误: {e}", exc_info=True)
+            return 0

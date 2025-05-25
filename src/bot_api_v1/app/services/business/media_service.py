@@ -1,7 +1,7 @@
 import re
 from typing import Dict, Any, Optional, Tuple, Union, List
 from datetime import datetime
-
+import asyncio
 from celery.platforms import _platform
 
 from bot_api_v1.app.core.logger import logger
@@ -598,28 +598,33 @@ class MediaService:
 
     @async_cache_result(expire_seconds=600, prefix="media-service")
     async def async_get_user_info(self, platform: str, user_id: str,log_extra: Dict[str, Any]) -> Dict[str, Any]:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, self.get_user_info_sync,platform,user_id,log_extra)
+
+    
+    def get_user_info_sync(self, platform: str, user_id: str,log_extra: Dict[str, Any]) -> Dict[str, Any]:
         try:
-            logger.info_to_db(f"获取用户信息 -async_get_user_info，platform-{platform},user_id is {user_id}", extra=log_extra)
+            logger.info_to_db(f"获取用户信息 -get_user_info_sync-{platform},user_id is {user_id}", extra=log_extra)
          
             data = {}
             if platform == MediaPlatform.XIAOHONGSHU:
-                xhs_data = await self.xhs_service.async_get_user_info(user_id,log_extra)
+                xhs_data = self.xhs_service.get_user_info(user_id,log_extra)
                 if xhs_data.get('success'):
-                    logger.debug(f"async_get_user_info---xhs_data---搜索结果: {xhs_data}", extra=log_extra)
+                    logger.debug(f"get_user_info_sync---xhs_data---搜索结果: {xhs_data}", extra=log_extra)
                     data = xhs_data.get('data')
                     data = json.dumps(data)
-                    logger.debug(f"async_get_user_info---data---搜索结果: {data}", extra=log_extra)
+                    logger.debug(f"get_user_info_sync---data---搜索结果: {data}", extra=log_extra)
 
                     return data
 
                 data = xhs_data
-                logger.debug(f"async_get_user_info---xhs_data---搜索结果: {json.dumps(data)}", extra=log_extra)
+                logger.debug(f"get_user_info_sync---xhs_data---搜索结果: {json.dumps(data)}", extra=log_extra)
                 return data
             # 可扩展其他平台
             else:
                 raise MediaError(f"暂不支持的平台: {platform}")
         except Exception as e:
-            logger.error(f"获取用户信息 -async_get_user_info: {str(e)}", extra=log_extra)
+            logger.error(f"获取用户信息 -get_user_info_sync: {str(e)}", extra=log_extra)
 
 
     @async_cache_result(expire_seconds=600, prefix="media-service")
